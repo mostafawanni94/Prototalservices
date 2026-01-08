@@ -2,6 +2,7 @@
 /// 
 /// Handles work log submission and retrieval.
 
+import 'dart:io';
 import '../../../core/network/api_client.dart';
 
 /// Work Log Allowance Model
@@ -44,7 +45,7 @@ class AllowanceTypeModel {
 
   factory AllowanceTypeModel.fromJson(Map<String, dynamic> json) {
     return AllowanceTypeModel(
-      id: json['id'],
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
       name: json['name'] ?? '',
       code: json['code'] ?? '',
       basePrice: double.tryParse(json['base_price']?.toString() ?? '0') ?? 0,
@@ -67,6 +68,9 @@ class WorkLogModel {
   final String? rejectionReason;
   final List<Map<String, dynamic>> allowances;
   final WorkLogEarnings? earnings;
+  final String? projectName;
+  final String? customerName;
+  final String? supervisorName;
 
   WorkLogModel({
     required this.id,
@@ -82,18 +86,21 @@ class WorkLogModel {
     this.rejectionReason,
     this.allowances = const [],
     this.earnings,
+    this.projectName,
+    this.customerName,
+    this.supervisorName,
   });
 
   factory WorkLogModel.fromJson(Map<String, dynamic> json) {
     return WorkLogModel(
       id: json['id']?.toString() ?? '',
-      locationAddress: json['location_address'] ?? json['project']?['address'] ?? '',
+      locationAddress: json['location_address'] ?? json['location_override'] ?? json['project']?['address'] ?? '',
       locationCity: json['location_city'] ?? json['project']?['city'] ?? '',
-      date: DateTime.tryParse(json['date'] ?? '') ?? DateTime.now(),
-      startTime: json['start_time'] ?? '',
-      endTime: json['end_time'] ?? '',
-      breakMinutes: json['break_minutes'] ?? 0,
-      hoursWorked: (json['hours_worked'] ?? 0).toDouble(),
+      date: DateTime.tryParse(json['work_date'] ?? json['date'] ?? '') ?? DateTime.now(),
+      startTime: json['start_time']?.toString().substring(0, 5) ?? '',
+      endTime: json['end_time']?.toString().substring(0, 5) ?? '',
+      breakMinutes: int.tryParse(json['break_duration_minutes']?.toString() ?? json['break_minutes']?.toString() ?? '0') ?? 0,
+      hoursWorked: double.tryParse(json['calculated_hours']?.toString() ?? json['hours_worked']?.toString() ?? '0') ?? 0,
       status: json['status'] ?? 'draft',
       notes: json['notes'],
       rejectionReason: json['rejection_reason'],
@@ -101,11 +108,14 @@ class WorkLogModel {
       earnings: json['estimated_earnings'] != null 
           ? WorkLogEarnings.fromJson(json['estimated_earnings']) 
           : null,
+      projectName: json['project_name'] ?? json['project']?['name'],
+      customerName: json['customer_name'] ?? json['project']?['customer_name'],
+      supervisorName: json['supervisor_name'] ?? json['supervisor']?['full_name'],
     );
   }
 
   bool get isApproved => status == 'approved';
-  bool get isPending => status == 'pending';
+  bool get isPending => status == 'pending' || status == 'submitted';
   bool get isRejected => status == 'rejected';
   bool get isDraft => status == 'draft';
 }
@@ -193,31 +203,57 @@ class WorkLogService {
     return results.map((w) => WorkLogModel.fromJson(w)).toList();
   }
 
-  /// Submit new work log with optional allowances
+  /// Submit new work log with optional allowances, breaks, and photos
   Future<WorkLogModel> submitWorkLog({
     required String assignmentId,
     required DateTime date,
     required String startTime,
     required String endTime,
-    required int breakMinutes,
+    int? breakMinutes,
+    List<Map<String, String>>? breaks,
     String? notes,
     List<WorkLogAllowanceModel>? allowances,
+    List<String>? photoPaths,
   }) async {
-    final body = {
-      'assignment': assignmentId,
-      'date': date.toIso8601String().split('T')[0],
+    final body = <String, dynamic>{
+      'shift_assignment': assignmentId,
+      'work_date': date.toIso8601String().split('T')[0],
       'start_time': startTime,
       'end_time': endTime,
-      'break_minutes': breakMinutes,
-      'notes': notes,
+      if (notes != null && notes.isNotEmpty) 'notes': notes,
     };
+    
+    // Send breaks array if provided
+    if (breaks != null && breaks.isNotEmpty) {
+      body['breaks'] = breaks;
+    } else if (breakMinutes != null) {
+      body['break_duration_minutes'] = breakMinutes;
+    }
     
     if (allowances != null && allowances.isNotEmpty) {
       body['allowances'] = allowances.map((a) => a.toJson()).toList();
     }
     
     final response = await _api.post('/worklogs/', body: body);
-    return WorkLogModel.fromJson(response);
+    final workLog = WorkLogModel.fromJson(response);
+    
+    // Upload photos if any
+    if (photoPaths != null && photoPaths.isNotEmpty) {
+      for (final path in photoPaths) {
+        await uploadPhoto(workLog.id, path);
+      }
+    }
+    
+    return workLog;
+  }
+
+  /// Upload a photo to a work log
+  Future<void> uploadPhoto(String workLogId, String filePath) async {
+    await _api.uploadFile(
+      '/worklogs/$workLogId/add_photo/',
+      file: File(filePath),
+      fieldName: 'photo',
+    );
   }
 
   /// Update rejected work log

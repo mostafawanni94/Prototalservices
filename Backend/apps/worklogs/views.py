@@ -95,7 +95,8 @@ class WorkLogViewSet(viewsets.ModelViewSet):
     def approve(self, request, pk=None):
         """Admin approves work log."""
         worklog = self.get_object()
-        if worklog.status != WorkLog.Status.SUBMITTED:
+        # Accept both 'submitted' and 'pending' status (they are functionally equivalent)
+        if worklog.status not in [WorkLog.Status.SUBMITTED, WorkLog.Status.PENDING]:
             return Response({'error': 'Not pending approval'}, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = WorkLogApprovalSerializer(data=request.data)
@@ -139,7 +140,8 @@ class WorkLogViewSet(viewsets.ModelViewSet):
     def reject(self, request, pk=None):
         """Admin rejects work log."""
         worklog = self.get_object()
-        if worklog.status != WorkLog.Status.SUBMITTED:
+        # Accept both 'submitted' and 'pending' status (they are functionally equivalent)
+        if worklog.status not in [WorkLog.Status.SUBMITTED, WorkLog.Status.PENDING]:
             return Response({'error': 'Not pending approval'}, status=status.HTTP_400_BAD_REQUEST)
         
         serializer = WorkLogRejectionSerializer(data=request.data)

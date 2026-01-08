@@ -65,6 +65,17 @@ class WorkLog(BaseModel):
         verbose_name="Assignment"
     )
     
+    # Link to planning system (ShiftAssignment)
+    shift_assignment = models.ForeignKey(
+        'projects.ShiftAssignment',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='work_logs',
+        verbose_name="Shift Assignment",
+        help_text="Link to the planned shift this worklog fulfills"
+    )
+    
     # Supervisor from customer's outfolders
     supervisor = models.ForeignKey(
         'customers.Outfolder',

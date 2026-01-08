@@ -39,7 +39,31 @@ class Customer(BaseModel):
     # Address
     address = models.CharField(
         max_length=255,
-        verbose_name="Street Address"
+        verbose_name="Street Address",
+        blank=True,
+        default='',
+        help_text="Legacy field - use street_name, house_number, house_number_addition instead"
+    )
+    street_name = models.CharField(
+        max_length=200,
+        verbose_name="Street Name",
+        blank=True,
+        default='',
+        help_text="Name of the street (e.g., Kerkstraat)"
+    )
+    house_number = models.CharField(
+        max_length=10,
+        verbose_name="House Number",
+        blank=True,
+        default='',
+        help_text="House/building number (e.g., 123)"
+    )
+    house_number_addition = models.CharField(
+        max_length=10,
+        verbose_name="House Number Addition",
+        blank=True,
+        default='',
+        help_text="Addition to house number (e.g., A, B, bis)"
     )
     postcode = models.CharField(
         max_length=10,
@@ -53,6 +77,13 @@ class Customer(BaseModel):
         max_length=100,
         default='Netherlands',
         verbose_name="Country"
+    )
+    website = models.URLField(
+        max_length=200,
+        blank=True,
+        default='',
+        verbose_name="Website",
+        help_text="Company website URL"
     )
     
     # Financial Information

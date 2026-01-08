@@ -1,12 +1,106 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/dashboard';
 import { Card, Button, Badge, Input } from '@/components/ui';
 import { api, Employee } from '@/lib/api';
 import { useLanguage } from '@/lib/i18n';
-import { Users, UserCheck, UserX, Search, Eye, Plus, X, Mail, Phone, Copy, MessageCircle, CheckCircle, AlertCircle, MapPin, Calendar, CreditCard, Globe, FileText, Edit, Save, Trash2, AlertTriangle } from 'lucide-react';
+import { Users, UserCheck, UserX, Search, Eye, Plus, X, Mail, Phone, Copy, MessageCircle, CheckCircle, AlertCircle, MapPin, Calendar, CreditCard, Globe, FileText, Edit, Save, Trash2, AlertTriangle, ChevronDown } from 'lucide-react';
+
+// Comprehensive list of nationalities with country flags
+const NATIONALITIES = [
+    { name: 'Netherlands', flag: '🇳🇱' },
+    { name: 'Germany', flag: '🇩🇪' },
+    { name: 'Belgium', flag: '🇧🇪' },
+    { name: 'France', flag: '🇫🇷' },
+    { name: 'United Kingdom', flag: '🇬🇧' },
+    { name: 'Spain', flag: '🇪🇸' },
+    { name: 'Italy', flag: '🇮🇹' },
+    { name: 'Poland', flag: '🇵🇱' },
+    { name: 'Portugal', flag: '🇵🇹' },
+    { name: 'Greece', flag: '🇬🇷' },
+    { name: 'Romania', flag: '🇷🇴' },
+    { name: 'Bulgaria', flag: '🇧🇬' },
+    { name: 'Hungary', flag: '🇭🇺' },
+    { name: 'Czech Republic', flag: '🇨🇿' },
+    { name: 'Austria', flag: '🇦🇹' },
+    { name: 'Sweden', flag: '🇸🇪' },
+    { name: 'Denmark', flag: '🇩🇰' },
+    { name: 'Finland', flag: '🇫🇮' },
+    { name: 'Norway', flag: '🇳🇴' },
+    { name: 'Ireland', flag: '🇮🇪' },
+    { name: 'Switzerland', flag: '🇨🇭' },
+    { name: 'Turkey', flag: '🇹🇷' },
+    { name: 'Morocco', flag: '🇲🇦' },
+    { name: 'Algeria', flag: '🇩🇿' },
+    { name: 'Tunisia', flag: '🇹🇳' },
+    { name: 'Egypt', flag: '🇪🇬' },
+    { name: 'Libya', flag: '🇱🇾' },
+    { name: 'Syria', flag: '🇸🇾' },
+    { name: 'Iraq', flag: '🇮🇶' },
+    { name: 'Iran', flag: '🇮🇷' },
+    { name: 'Lebanon', flag: '🇱🇧' },
+    { name: 'Jordan', flag: '🇯🇴' },
+    { name: 'Palestine', flag: '🇵🇸' },
+    { name: 'Saudi Arabia', flag: '🇸🇦' },
+    { name: 'United Arab Emirates', flag: '🇦🇪' },
+    { name: 'Kuwait', flag: '🇰🇼' },
+    { name: 'Qatar', flag: '🇶🇦' },
+    { name: 'Oman', flag: '🇴🇲' },
+    { name: 'Bahrain', flag: '🇧🇭' },
+    { name: 'Yemen', flag: '🇾🇪' },
+    { name: 'Afghanistan', flag: '🇦🇫' },
+    { name: 'Pakistan', flag: '🇵🇰' },
+    { name: 'India', flag: '🇮🇳' },
+    { name: 'Bangladesh', flag: '🇧🇩' },
+    { name: 'Sri Lanka', flag: '🇱🇰' },
+    { name: 'Nepal', flag: '🇳🇵' },
+    { name: 'China', flag: '🇨🇳' },
+    { name: 'Japan', flag: '🇯🇵' },
+    { name: 'South Korea', flag: '🇰🇷' },
+    { name: 'Vietnam', flag: '🇻🇳' },
+    { name: 'Thailand', flag: '🇹🇭' },
+    { name: 'Philippines', flag: '🇵🇭' },
+    { name: 'Indonesia', flag: '🇮🇩' },
+    { name: 'Malaysia', flag: '🇲🇾' },
+    { name: 'Singapore', flag: '🇸🇬' },
+    { name: 'Russia', flag: '🇷🇺' },
+    { name: 'Ukraine', flag: '🇺🇦' },
+    { name: 'Belarus', flag: '🇧🇾' },
+    { name: 'Kazakhstan', flag: '🇰🇿' },
+    { name: 'Uzbekistan', flag: '🇺🇿' },
+    { name: 'Azerbaijan', flag: '🇦🇿' },
+    { name: 'Georgia', flag: '🇬🇪' },
+    { name: 'Armenia', flag: '🇦🇲' },
+    { name: 'United States', flag: '🇺🇸' },
+    { name: 'Canada', flag: '🇨🇦' },
+    { name: 'Mexico', flag: '🇲🇽' },
+    { name: 'Brazil', flag: '🇧🇷' },
+    { name: 'Argentina', flag: '🇦🇷' },
+    { name: 'Colombia', flag: '🇨🇴' },
+    { name: 'Peru', flag: '🇵🇪' },
+    { name: 'Chile', flag: '🇨🇱' },
+    { name: 'Venezuela', flag: '🇻🇪' },
+    { name: 'Ecuador', flag: '🇪🇨' },
+    { name: 'Cuba', flag: '🇨🇺' },
+    { name: 'South Africa', flag: '🇿🇦' },
+    { name: 'Nigeria', flag: '🇳🇬' },
+    { name: 'Ghana', flag: '🇬🇭' },
+    { name: 'Kenya', flag: '🇰🇪' },
+    { name: 'Ethiopia', flag: '🇪🇹' },
+    { name: 'Somalia', flag: '🇸🇴' },
+    { name: 'Eritrea', flag: '🇪🇷' },
+    { name: 'Sudan', flag: '🇸🇩' },
+    { name: 'Cameroon', flag: '🇨🇲' },
+    { name: 'Congo', flag: '🇨🇬' },
+    { name: 'Senegal', flag: '🇸🇳' },
+    { name: 'Australia', flag: '🇦🇺' },
+    { name: 'New Zealand', flag: '🇳🇿' },
+    { name: 'Stateless', flag: '🏳️' },
+    { name: 'Other', flag: '🌍' },
+];
+
 
 interface CreateEmployeeForm {
     email: string;
@@ -95,6 +189,22 @@ export default function EmployeesPage() {
         contract_end_date: '',
         hourly_rate: '',
     });
+
+    // Nationality dropdown state
+    const [nationalitySearch, setNationalitySearch] = useState('');
+    const [nationalityDropdownOpen, setNationalityDropdownOpen] = useState(false);
+    const nationalityDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close nationality dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (nationalityDropdownRef.current && !nationalityDropdownRef.current.contains(event.target as Node)) {
+                setNationalityDropdownOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     useEffect(() => {
         loadEmployees();
@@ -1433,14 +1543,123 @@ export default function EmployeesPage() {
                                                     className="h-11"
                                                 />
                                             </div>
-                                            <div>
+                                            <div ref={nationalityDropdownRef} style={{ position: 'relative' }}>
                                                 <label className="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
-                                                <Input
-                                                    value={editForm.nationality}
-                                                    onChange={(e) => setEditForm(f => ({ ...f, nationality: e.target.value }))}
-                                                    placeholder="Netherlands"
-                                                    className="h-11"
-                                                />
+                                                <div
+                                                    onClick={() => setNationalityDropdownOpen(!nationalityDropdownOpen)}
+                                                    style={{
+                                                        width: '100%',
+                                                        height: '44px',
+                                                        padding: '0 12px',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'space-between',
+                                                        border: '1px solid #E5E7EB',
+                                                        borderRadius: '8px',
+                                                        backgroundColor: '#FFFFFF',
+                                                        cursor: 'pointer',
+                                                        fontSize: '14px',
+                                                    }}
+                                                >
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        {editForm.nationality ? (
+                                                            <>
+                                                                <span style={{ fontSize: '20px' }}>
+                                                                    {NATIONALITIES.find(n => n.name === editForm.nationality)?.flag || '🌍'}
+                                                                </span>
+                                                                {editForm.nationality}
+                                                            </>
+                                                        ) : (
+                                                            <span style={{ color: '#9CA3AF' }}>Select nationality...</span>
+                                                        )}
+                                                    </span>
+                                                    <ChevronDown size={16} color="#6B7280" style={{ transform: nationalityDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                                                </div>
+
+                                                {nationalityDropdownOpen && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        top: '100%',
+                                                        left: 0,
+                                                        right: 0,
+                                                        marginTop: '4px',
+                                                        backgroundColor: '#FFFFFF',
+                                                        border: '1px solid #E5E7EB',
+                                                        borderRadius: '8px',
+                                                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                                        zIndex: 9999,
+                                                    }}>
+                                                        {/* Search Input */}
+                                                        <div style={{ padding: '8px', borderBottom: '1px solid #E5E7EB' }}>
+                                                            <div style={{ position: 'relative' }}>
+                                                                <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
+                                                                <input
+                                                                    type="text"
+                                                                    value={nationalitySearch}
+                                                                    onChange={(e) => setNationalitySearch(e.target.value)}
+                                                                    placeholder="Search nationality..."
+                                                                    autoFocus
+                                                                    style={{
+                                                                        width: '100%',
+                                                                        padding: '8px 10px 8px 32px',
+                                                                        border: '1px solid #E5E7EB',
+                                                                        borderRadius: '6px',
+                                                                        fontSize: '13px',
+                                                                        outline: 'none',
+                                                                    }}
+                                                                    onClick={(e) => e.stopPropagation()}
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Options List */}
+                                                        <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                                                            {NATIONALITIES
+                                                                .filter(n => n.name.toLowerCase().includes(nationalitySearch.toLowerCase()))
+                                                                .map((nationality) => (
+                                                                    <div
+                                                                        key={nationality.name}
+                                                                        onClick={() => {
+                                                                            setEditForm(f => ({ ...f, nationality: nationality.name }));
+                                                                            setNationalityDropdownOpen(false);
+                                                                            setNationalitySearch('');
+                                                                        }}
+                                                                        style={{
+                                                                            padding: '10px 12px',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '10px',
+                                                                            cursor: 'pointer',
+                                                                            backgroundColor: editForm.nationality === nationality.name ? '#EFF6FF' : 'transparent',
+                                                                            borderLeft: editForm.nationality === nationality.name ? '3px solid #2563EB' : '3px solid transparent',
+                                                                        }}
+                                                                        onMouseEnter={(e) => {
+                                                                            if (editForm.nationality !== nationality.name) {
+                                                                                e.currentTarget.style.backgroundColor = '#F9FAFB';
+                                                                            }
+                                                                        }}
+                                                                        onMouseLeave={(e) => {
+                                                                            if (editForm.nationality !== nationality.name) {
+                                                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                                            }
+                                                                        }}
+                                                                    >
+                                                                        <span style={{ fontSize: '20px' }}>{nationality.flag}</span>
+                                                                        <span style={{ fontSize: '14px', color: '#374151', fontWeight: editForm.nationality === nationality.name ? 600 : 400 }}>{nationality.name}</span>
+                                                                        {editForm.nationality === nationality.name && (
+                                                                            <CheckCircle size={16} color="#2563EB" style={{ marginLeft: 'auto' }} />
+                                                                        )}
+                                                                    </div>
+                                                                ))
+                                                            }
+                                                            {NATIONALITIES.filter(n => n.name.toLowerCase().includes(nationalitySearch.toLowerCase())).length === 0 && (
+                                                                <div style={{ padding: '16px', textAlign: 'center', color: '#9CA3AF', fontSize: '13px' }}>
+                                                                    No nationality found
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-2">BSN *</label>

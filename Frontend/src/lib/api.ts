@@ -60,7 +60,17 @@ class ApiClient {
             throw new Error(error.detail || error.message || 'Request failed');
         }
 
-        return response.json();
+        // Handle 204 No Content (DELETE success) - return empty object
+        if (response.status === 204 || response.headers.get('content-length') === '0') {
+            return {} as T;
+        }
+
+        // Try to parse JSON, return empty object if body is empty
+        const text = await response.text();
+        if (!text) {
+            return {} as T;
+        }
+        return JSON.parse(text);
     }
 
     // Auth
@@ -138,6 +148,12 @@ class ApiClient {
         return this.request<WorkLog>(`/worklogs/${id}/reject/`, {
             method: 'POST',
             body: { reason },
+        });
+    }
+
+    async deleteWorkLog(id: string) {
+        return this.request<void>(`/worklogs/${id}/`, {
+            method: 'DELETE',
         });
     }
 
@@ -273,6 +289,15 @@ export interface WorkLog {
     calculated_hours: number;
     status: string;
     notes: string;
+    // Link to planning system
+    shift_assignment?: string | null;
+    shift_assignment_info?: {
+        id: string;
+        date: string;
+        shift_name: string;
+        shift_color: string;
+        project_name: string;
+    } | null;
 }
 
 export interface Advance {

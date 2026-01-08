@@ -8,7 +8,7 @@ import {
 
     Building2, ArrowLeft, User, Mail, Phone, CreditCard, FileText, Shield, Car, Edit,
     Check, X, Save, ExternalLink, AlertTriangle, Clock, Briefcase, Lock,
-    CheckCircle, XCircle, Upload, Trash2, Eye, Calendar, ChevronDown, Award, Plus, Image as ImageIcon
+    CheckCircle, XCircle, Upload, Trash2, Eye, Calendar, ChevronDown, Award, Plus, Image as ImageIcon, Search
 } from 'lucide-react';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
@@ -20,6 +20,100 @@ const LICENSE_CATEGORIES = [
     { code: 'CE', icon: '🚛' }, { code: 'D1E', icon: '🚌' }, { code: 'DE', icon: '🚌' }, { code: 'T', icon: '🚜' }
 ];
 const COUNTRIES = ['Netherlands', 'Germany', 'Belgium', 'France', 'United Kingdom', 'Spain', 'Italy', 'Poland', 'Turkey', 'Morocco', 'Syria', 'Iraq', 'Other'];
+
+// Comprehensive list of nationalities with country flags
+const NATIONALITIES = [
+    { name: 'Netherlands', flag: '🇳🇱' },
+    { name: 'Germany', flag: '🇩🇪' },
+    { name: 'Belgium', flag: '🇧🇪' },
+    { name: 'France', flag: '🇫🇷' },
+    { name: 'United Kingdom', flag: '🇬🇧' },
+    { name: 'Spain', flag: '🇪🇸' },
+    { name: 'Italy', flag: '🇮🇹' },
+    { name: 'Poland', flag: '🇵🇱' },
+    { name: 'Portugal', flag: '🇵🇹' },
+    { name: 'Greece', flag: '🇬🇷' },
+    { name: 'Romania', flag: '🇷🇴' },
+    { name: 'Bulgaria', flag: '🇧🇬' },
+    { name: 'Hungary', flag: '🇭🇺' },
+    { name: 'Czech Republic', flag: '🇨🇿' },
+    { name: 'Austria', flag: '🇦🇹' },
+    { name: 'Sweden', flag: '🇸🇪' },
+    { name: 'Denmark', flag: '🇩🇰' },
+    { name: 'Finland', flag: '🇫🇮' },
+    { name: 'Norway', flag: '🇳🇴' },
+    { name: 'Ireland', flag: '🇮🇪' },
+    { name: 'Switzerland', flag: '🇨🇭' },
+    { name: 'Turkey', flag: '🇹🇷' },
+    { name: 'Morocco', flag: '🇲🇦' },
+    { name: 'Algeria', flag: '🇩🇿' },
+    { name: 'Tunisia', flag: '🇹🇳' },
+    { name: 'Egypt', flag: '🇪🇬' },
+    { name: 'Libya', flag: '🇱🇾' },
+    { name: 'Syria', flag: '🇸🇾' },
+    { name: 'Iraq', flag: '🇮🇶' },
+    { name: 'Iran', flag: '🇮🇷' },
+    { name: 'Lebanon', flag: '🇱🇧' },
+    { name: 'Jordan', flag: '🇯🇴' },
+    { name: 'Palestine', flag: '🇵🇸' },
+    { name: 'Saudi Arabia', flag: '🇸🇦' },
+    { name: 'United Arab Emirates', flag: '🇦🇪' },
+    { name: 'Kuwait', flag: '🇰🇼' },
+    { name: 'Qatar', flag: '🇶🇦' },
+    { name: 'Oman', flag: '🇴🇲' },
+    { name: 'Bahrain', flag: '🇧🇭' },
+    { name: 'Yemen', flag: '🇾🇪' },
+    { name: 'Afghanistan', flag: '🇦🇫' },
+    { name: 'Pakistan', flag: '🇵🇰' },
+    { name: 'India', flag: '🇮🇳' },
+    { name: 'Bangladesh', flag: '🇧🇩' },
+    { name: 'Sri Lanka', flag: '🇱🇰' },
+    { name: 'Nepal', flag: '🇳🇵' },
+    { name: 'China', flag: '🇨🇳' },
+    { name: 'Japan', flag: '🇯🇵' },
+    { name: 'South Korea', flag: '🇰🇷' },
+    { name: 'Vietnam', flag: '🇻🇳' },
+    { name: 'Thailand', flag: '🇹🇭' },
+    { name: 'Philippines', flag: '🇵🇭' },
+    { name: 'Indonesia', flag: '🇮🇩' },
+    { name: 'Malaysia', flag: '🇲🇾' },
+    { name: 'Singapore', flag: '🇸🇬' },
+    { name: 'Russia', flag: '🇷🇺' },
+    { name: 'Ukraine', flag: '🇺🇦' },
+    { name: 'Belarus', flag: '🇧🇾' },
+    { name: 'Kazakhstan', flag: '🇰🇿' },
+    { name: 'Uzbekistan', flag: '🇺🇿' },
+    { name: 'Azerbaijan', flag: '🇦🇿' },
+    { name: 'Georgia', flag: '🇬🇪' },
+    { name: 'Armenia', flag: '🇦🇲' },
+    { name: 'United States', flag: '🇺🇸' },
+    { name: 'Canada', flag: '🇨🇦' },
+    { name: 'Mexico', flag: '🇲🇽' },
+    { name: 'Brazil', flag: '🇧🇷' },
+    { name: 'Argentina', flag: '🇦🇷' },
+    { name: 'Colombia', flag: '🇨🇴' },
+    { name: 'Peru', flag: '🇵🇪' },
+    { name: 'Chile', flag: '🇨🇱' },
+    { name: 'Venezuela', flag: '🇻🇪' },
+    { name: 'Ecuador', flag: '🇪🇨' },
+    { name: 'Cuba', flag: '🇨🇺' },
+    { name: 'South Africa', flag: '🇿🇦' },
+    { name: 'Nigeria', flag: '🇳🇬' },
+    { name: 'Ghana', flag: '🇬🇭' },
+    { name: 'Kenya', flag: '🇰🇪' },
+    { name: 'Ethiopia', flag: '🇪🇹' },
+    { name: 'Somalia', flag: '🇸🇴' },
+    { name: 'Eritrea', flag: '🇪🇷' },
+    { name: 'Sudan', flag: '🇸🇩' },
+    { name: 'Cameroon', flag: '🇨🇲' },
+    { name: 'Congo', flag: '🇨🇬' },
+    { name: 'Senegal', flag: '🇸🇳' },
+    { name: 'Australia', flag: '🇦🇺' },
+    { name: 'New Zealand', flag: '🇳🇿' },
+    { name: 'Stateless', flag: '🏳️' },
+    { name: 'Other', flag: '🌍' },
+];
+
 const DOCUMENT_TYPES = [{ id: 1, name: 'Passport' }, { id: 2, name: 'ID Card' }, { id: 3, name: 'Residence Permit' }];
 
 
@@ -39,6 +133,9 @@ interface EmployeeDetail {
     bsn: string;
     phone_number: string;
     street_address: string;
+    street_name: string;
+    house_number: string;
+    house_number_addition: string;
     postcode: string;
     city: string;
     iban: string;
@@ -174,6 +271,189 @@ export default function EmployeeDetailPage() {
     const [certificateFileBack, setCertificateFileBack] = useState<File | null>(null);
     const [uploadMode, setUploadMode] = useState<'pdf' | 'images'>('pdf');
     const [savingCertificate, setSavingCertificate] = useState(false);
+
+    // Nationality dropdown state
+    const [nationalitySearch, setNationalitySearch] = useState('');
+    const [nationalityDropdownOpen, setNationalityDropdownOpen] = useState(false);
+    const nationalityDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close nationality dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (nationalityDropdownRef.current && !nationalityDropdownRef.current.contains(event.target as Node)) {
+                setNationalityDropdownOpen(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Postcode lookup state
+    const [postcodeLookupLoading, setPostcodeLookupLoading] = useState(false);
+    const [postcodeSuggestions, setPostcodeSuggestions] = useState<{ street: string; city: string; municipality?: string }[]>([]);
+    const [showPostcodeSuggestions, setShowPostcodeSuggestions] = useState(false);
+    const postcodeDropdownRef = useRef<HTMLDivElement>(null);
+
+    // Lookup Dutch address by postcode
+    const lookupPostcode = async (postcode: string) => {
+        // Dutch postcode format: 4 digits + 2 letters (e.g., 1234AB or 1234 AB)
+        const cleanPostcode = postcode.replace(/\s/g, '').toUpperCase();
+        const postcodeRegex = /^[1-9][0-9]{3}[A-Z]{2}$/;
+
+        if (!postcodeRegex.test(cleanPostcode)) {
+            setPostcodeSuggestions([]);
+            setShowPostcodeSuggestions(false);
+            return;
+        }
+
+        setPostcodeLookupLoading(true);
+        try {
+            // Use PDOK Locatieserver API (Official Dutch Government API - free, CORS-enabled)
+            // Fetch addresses to get street names - use 'adres' type for street-level data
+            const formattedPostcode = cleanPostcode.slice(0, 4) + ' ' + cleanPostcode.slice(4);
+            const response = await fetch(
+                `https://api.pdok.nl/bzk/locatieserver/search/v3_1/free?q=postcode:${formattedPostcode}&fq=type:adres&rows=50`,
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                    }
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data?.response?.docs && data.response.docs.length > 0) {
+                    // Get unique streets from the addresses
+                    const streetMap = new Map<string, { street: string; city: string; municipality: string }>();
+
+                    data.response.docs.forEach((doc: {
+                        straatnaam?: string;
+                        woonplaatsnaam?: string;
+                        gemeentenaam?: string;
+                        postcode?: string;
+                    }) => {
+                        const street = doc.straatnaam || '';
+                        const city = doc.woonplaatsnaam || doc.gemeentenaam || '';
+                        if (street && city && !streetMap.has(street)) {
+                            streetMap.set(street, {
+                                street,
+                                city,
+                                municipality: doc.gemeentenaam || '',
+                            });
+                        }
+                    });
+
+                    const suggestions = Array.from(streetMap.values());
+
+                    if (suggestions.length > 0) {
+                        setPostcodeSuggestions(suggestions);
+                        setShowPostcodeSuggestions(true);
+                        setPostcodeLookupLoading(false);
+                        return;
+                    }
+                }
+            }
+
+            // Fallback: Try with different PDOK endpoint (address search)
+            const fallbackResponse = await fetch(
+                `https://api.pdok.nl/bzk/locatieserver/search/v3_1/suggest?q=${formattedPostcode}`,
+                {
+                    headers: { 'Accept': 'application/json' }
+                }
+            );
+
+            if (fallbackResponse.ok) {
+                const fallbackData = await fallbackResponse.json();
+                if (fallbackData?.response?.docs && fallbackData.response.docs.length > 0) {
+                    const suggestions = fallbackData.response.docs
+                        .filter((doc: { type: string }) => doc.type === 'postcode' || doc.type === 'adres')
+                        .slice(0, 5)
+                        .map((doc: {
+                            straatnaam?: string;
+                            woonplaatsnaam?: string;
+                            gemeentenaam?: string;
+                            weergavenaam?: string;
+                        }) => ({
+                            street: doc.straatnaam || '',
+                            city: doc.woonplaatsnaam || doc.gemeentenaam || '',
+                            municipality: doc.gemeentenaam || '',
+                        }));
+
+                    if (suggestions.length > 0) {
+                        setPostcodeSuggestions(suggestions);
+                        setShowPostcodeSuggestions(true);
+                        setPostcodeLookupLoading(false);
+                        return;
+                    }
+                }
+            }
+
+            // Last fallback: Use postcode range mapping for city only
+            const postcodeFirstTwo = parseInt(cleanPostcode.slice(0, 2));
+            let city = '';
+
+            // Major Dutch cities by postcode range
+            if (postcodeFirstTwo >= 10 && postcodeFirstTwo <= 11) city = 'Amsterdam';
+            else if (postcodeFirstTwo === 12) city = 'Haarlem';
+            else if (postcodeFirstTwo === 13) city = 'Amstelveen';
+            else if (postcodeFirstTwo === 14) city = 'Hoofddorp';
+            else if (postcodeFirstTwo === 15) city = 'Purmerend';
+            else if (postcodeFirstTwo === 16) city = 'Zaandam';
+            else if (postcodeFirstTwo === 17) city = 'Heerhugowaard';
+            else if (postcodeFirstTwo === 18) city = 'Alkmaar';
+            else if (postcodeFirstTwo === 19) city = 'Den Helder';
+            else if (postcodeFirstTwo === 20 || postcodeFirstTwo === 23) city = 'Den Haag';
+            else if (postcodeFirstTwo === 21) city = 'Wassenaar';
+            else if (postcodeFirstTwo === 22) city = 'Leidschendam';
+            else if (postcodeFirstTwo === 24 || postcodeFirstTwo === 25) city = 'Leiden';
+            else if (postcodeFirstTwo === 26) city = 'Noordwijk';
+            else if (postcodeFirstTwo === 27 || postcodeFirstTwo === 28) city = 'Gouda';
+            else if (postcodeFirstTwo === 29) city = 'Zoetermeer';
+            else if (postcodeFirstTwo === 30 || postcodeFirstTwo === 31) city = 'Rotterdam';
+            else if (postcodeFirstTwo === 32) city = 'Dordrecht';
+            else if (postcodeFirstTwo === 33) city = 'Papendrecht';
+            else if (postcodeFirstTwo === 34) city = 'Gorinchem';
+            else if (postcodeFirstTwo === 35) city = 'Hilversum';
+            else if (postcodeFirstTwo === 36) city = 'Almere';
+            else if (postcodeFirstTwo === 37 || postcodeFirstTwo === 38) city = 'Amersfoort';
+            else if (postcodeFirstTwo === 39) city = 'Zeist';
+            else if (postcodeFirstTwo >= 40 && postcodeFirstTwo <= 41) city = 'Eindhoven';
+            else if (postcodeFirstTwo >= 50 && postcodeFirstTwo <= 51) city = 'Eindhoven';
+            else if (postcodeFirstTwo === 52 || postcodeFirstTwo === 53) city = 'Tilburg';
+            else if (postcodeFirstTwo === 54 || postcodeFirstTwo === 65) city = 'Breda';
+            else if (postcodeFirstTwo >= 60 && postcodeFirstTwo <= 62) city = 'Maastricht';
+            else if (postcodeFirstTwo === 63) city = 'Heerlen';
+            else if (postcodeFirstTwo >= 70 && postcodeFirstTwo <= 73) city = 'Enschede';
+            else if (postcodeFirstTwo >= 80 && postcodeFirstTwo <= 81) city = 'Zwolle';
+            else if (postcodeFirstTwo === 82) city = 'Lelystad';
+            else if (postcodeFirstTwo >= 90 && postcodeFirstTwo <= 91) city = 'Groningen';
+            else if (postcodeFirstTwo >= 95 && postcodeFirstTwo <= 96) city = 'Leeuwarden';
+
+            if (city) {
+                setPostcodeSuggestions([{ street: '', city, municipality: city }]);
+                setShowPostcodeSuggestions(true);
+            } else {
+                setPostcodeSuggestions([]);
+                setShowPostcodeSuggestions(false);
+            }
+        } catch (error) {
+            console.error('Postcode lookup error:', error);
+            setPostcodeSuggestions([]);
+        } finally {
+            setPostcodeLookupLoading(false);
+        }
+    };
+
+    // Close postcode dropdown when clicking outside
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (postcodeDropdownRef.current && !postcodeDropdownRef.current.contains(event.target as Node)) {
+                setShowPostcodeSuggestions(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     useEffect(() => { loadEmployee(); }, [params.id]);
 
@@ -344,7 +624,9 @@ export default function EmployeeDetailPage() {
                         first_name: editForm.first_name, last_name: editForm.last_name, prefix_name: editForm.prefix_name,
                         gender: editForm.gender, date_of_birth: editForm.date_of_birth, birthplace: editForm.birthplace,
                         nationality: editForm.nationality, bsn: editForm.bsn, phone_number: editForm.phone_number,
-                        street_address: editForm.street_address, postcode: editForm.postcode, city: editForm.city,
+                        street_address: editForm.street_address, street_name: editForm.street_name,
+                        house_number: editForm.house_number, house_number_addition: editForm.house_number_addition,
+                        postcode: editForm.postcode, city: editForm.city,
                         iban: editForm.iban, hourly_rate: editForm.hourly_rate ? parseFloat(editForm.hourly_rate as string) : null,
                         has_travel_allowance: !!(editForm.travel_cost_per_km || editForm.travel_hour_percentage),
                         travel_cost_per_km: editForm.travel_cost_per_km ? parseFloat(editForm.travel_cost_per_km as string) : null,
@@ -914,8 +1196,149 @@ export default function EmployeeDetailPage() {
                                     <Field label="Gender" value={editForm.gender} editing={isEditing} type="select" options={['male', 'female', 'other']} onChange={v => setEditForm({ ...editForm, gender: v })} />
                                     <Field label="Date of Birth" value={editForm.date_of_birth} editing={isEditing} type="date" onChange={v => setEditForm({ ...editForm, date_of_birth: v })} />
                                     <Field label="Birthplace" value={editForm.birthplace} editing={isEditing} onChange={v => setEditForm({ ...editForm, birthplace: v })} />
-                                    <Field label="Nationality" value={editForm.nationality} editing={isEditing} type="select" options={COUNTRIES} onChange={v => setEditForm({ ...editForm, nationality: v })} />
-                                    <Field label="BSN" value={editForm.bsn} editing={isEditing} onChange={v => setEditForm({ ...editForm, bsn: v })} />
+
+                                    {/* Custom Searchable Nationality Dropdown */}
+                                    {isEditing ? (
+                                        <div ref={nationalityDropdownRef} style={{ position: 'relative' }}>
+                                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#6B7280', marginBottom: '8px', textTransform: 'uppercase' }}>Nationality</label>
+                                            <div
+                                                onClick={() => setNationalityDropdownOpen(!nationalityDropdownOpen)}
+                                                style={{
+                                                    width: '100%',
+                                                    padding: '12px 16px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    backgroundColor: '#F9FAFB',
+                                                    border: '1px solid #E5E7EB',
+                                                    borderRadius: '10px',
+                                                    cursor: 'pointer',
+                                                    fontSize: '14px',
+                                                }}
+                                            >
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {editForm.nationality ? (
+                                                        <>
+                                                            <span style={{ fontSize: '18px' }}>
+                                                                {NATIONALITIES.find(n => n.name === editForm.nationality)?.flag || '🌍'}
+                                                            </span>
+                                                            {editForm.nationality}
+                                                        </>
+                                                    ) : (
+                                                        <span style={{ color: '#9CA3AF' }}>Select nationality...</span>
+                                                    )}
+                                                </span>
+                                                <ChevronDown size={16} color="#6B7280" style={{ transform: nationalityDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.2s' }} />
+                                            </div>
+
+                                            {nationalityDropdownOpen && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    marginTop: '4px',
+                                                    backgroundColor: '#FFFFFF',
+                                                    border: '1px solid #E5E7EB',
+                                                    borderRadius: '10px',
+                                                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                                                    zIndex: 9999,
+                                                }}>
+                                                    {/* Search Input */}
+                                                    <div style={{ padding: '10px', borderBottom: '1px solid #E5E7EB' }}>
+                                                        <div style={{ position: 'relative' }}>
+                                                            <Search size={14} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#9CA3AF' }} />
+                                                            <input
+                                                                type="text"
+                                                                value={nationalitySearch}
+                                                                onChange={(e) => setNationalitySearch(e.target.value)}
+                                                                placeholder="Search nationality..."
+                                                                autoFocus
+                                                                style={{
+                                                                    width: '100%',
+                                                                    padding: '10px 12px 10px 36px',
+                                                                    border: '1px solid #E5E7EB',
+                                                                    borderRadius: '8px',
+                                                                    fontSize: '14px',
+                                                                    outline: 'none',
+                                                                }}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Options List */}
+                                                    <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                                                        {NATIONALITIES
+                                                            .filter(n => n.name.toLowerCase().includes(nationalitySearch.toLowerCase()))
+                                                            .map((nationality) => (
+                                                                <div
+                                                                    key={nationality.name}
+                                                                    onClick={() => {
+                                                                        setEditForm({ ...editForm, nationality: nationality.name });
+                                                                        setNationalityDropdownOpen(false);
+                                                                        setNationalitySearch('');
+                                                                    }}
+                                                                    style={{
+                                                                        padding: '12px 14px',
+                                                                        display: 'flex',
+                                                                        alignItems: 'center',
+                                                                        gap: '12px',
+                                                                        cursor: 'pointer',
+                                                                        backgroundColor: editForm.nationality === nationality.name ? '#EFF6FF' : 'transparent',
+                                                                        borderLeft: editForm.nationality === nationality.name ? '3px solid #2563EB' : '3px solid transparent',
+                                                                    }}
+                                                                    onMouseEnter={(e) => {
+                                                                        if (editForm.nationality !== nationality.name) {
+                                                                            e.currentTarget.style.backgroundColor = '#F9FAFB';
+                                                                        }
+                                                                    }}
+                                                                    onMouseLeave={(e) => {
+                                                                        if (editForm.nationality !== nationality.name) {
+                                                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <span style={{ fontSize: '20px' }}>{nationality.flag}</span>
+                                                                    <span style={{ fontSize: '14px', color: '#374151', fontWeight: editForm.nationality === nationality.name ? 600 : 400 }}>{nationality.name}</span>
+                                                                    {editForm.nationality === nationality.name && (
+                                                                        <CheckCircle size={16} color="#2563EB" style={{ marginLeft: 'auto' }} />
+                                                                    )}
+                                                                </div>
+                                                            ))
+                                                        }
+                                                        {NATIONALITIES.filter(n => n.name.toLowerCase().includes(nationalitySearch.toLowerCase())).length === 0 && (
+                                                            <div style={{ padding: '16px', textAlign: 'center', color: '#9CA3AF', fontSize: '14px' }}>
+                                                                No nationality found
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '4px 0' }}>
+                                            <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: '4px', margin: 0 }}>Nationality</p>
+                                            <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {editForm.nationality ? (
+                                                    <>
+                                                        <span style={{ fontSize: '16px' }}>{NATIONALITIES.find(n => n.name === editForm.nationality)?.flag || '🌍'}</span>
+                                                        {editForm.nationality}
+                                                    </>
+                                                ) : <span style={{ color: '#9CA3AF' }}>—</span>}
+                                            </p>
+                                        </div>
+                                    )}
+                                    <Field
+                                        label="BSN"
+                                        value={editForm.bsn ? editForm.bsn.replace(/\D/g, '').replace(/(\d{4})(\d{2})(\d{3})/, '$1.$2.$3') : ''}
+                                        editing={isEditing}
+                                        onChange={v => {
+                                            // Remove all non-digits, limit to 9 digits
+                                            const digitsOnly = v.replace(/\D/g, '').slice(0, 9);
+                                            setEditForm({ ...editForm, bsn: digitsOnly });
+                                        }}
+                                    />
                                 </div>
                             </Card>
 
@@ -926,14 +1349,250 @@ export default function EmployeeDetailPage() {
                                     </div>
                                     <Field label="Phone" value={editForm.phone_number} editing={isEditing} onChange={v => setEditForm({ ...editForm, phone_number: v })} />
                                     <Field label="City" value={editForm.city} editing={isEditing} onChange={v => setEditForm({ ...editForm, city: v })} />
-                                    <Field label="Address" value={editForm.street_address} editing={isEditing} onChange={v => setEditForm({ ...editForm, street_address: v })} />
-                                    <Field label="Postcode" value={editForm.postcode} editing={isEditing} onChange={v => setEditForm({ ...editForm, postcode: v })} />
+
+                                    {/* Street Name with Icon */}
+                                    {isEditing ? (
+                                        <div>
+                                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#6B7280', marginBottom: '8px', textTransform: 'uppercase' }}>
+                                                Street Name
+                                            </label>
+                                            <div style={{ position: 'relative' }}>
+                                                <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px' }}>🛣️</span>
+                                                <input
+                                                    type="text"
+                                                    value={editForm.street_name || ''}
+                                                    onChange={(e) => setEditForm({ ...editForm, street_name: e.target.value })}
+                                                    placeholder="Kerkstraat"
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '12px 16px 12px 40px',
+                                                        backgroundColor: '#F9FAFB',
+                                                        border: '1px solid #E5E7EB',
+                                                        borderRadius: '10px',
+                                                        fontSize: '14px',
+                                                        outline: 'none',
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '4px 0' }}>
+                                            <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: '4px', margin: 0 }}>Street Name</p>
+                                            <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                <span style={{ fontSize: '12px' }}>🛣️</span>
+                                                {editForm.street_name || '—'}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* House Number and Addition Row */}
+                                    <div style={{ display: 'flex', gap: '12px' }}>
+                                        {/* House Number */}
+                                        {isEditing ? (
+                                            <div style={{ flex: 1 }}>
+                                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#6B7280', marginBottom: '8px', textTransform: 'uppercase' }}>
+                                                    House Nr.
+                                                </label>
+                                                <div style={{ position: 'relative' }}>
+                                                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '14px' }}>🏠</span>
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.house_number || ''}
+                                                        onChange={(e) => setEditForm({ ...editForm, house_number: e.target.value })}
+                                                        placeholder="123"
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '12px 16px 12px 40px',
+                                                            backgroundColor: '#F9FAFB',
+                                                            border: '1px solid #E5E7EB',
+                                                            borderRadius: '10px',
+                                                            fontSize: '14px',
+                                                            outline: 'none',
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div style={{ padding: '4px 0', flex: 1 }}>
+                                                <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: '4px', margin: 0 }}>House Nr.</p>
+                                                <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    <span style={{ fontSize: '12px' }}>🏠</span>
+                                                    {editForm.house_number || '—'}
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* House Number Addition */}
+                                        {isEditing ? (
+                                            <div style={{ width: '80px' }}>
+                                                <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#6B7280', marginBottom: '8px', textTransform: 'uppercase' }}>
+                                                    Add.
+                                                </label>
+                                                <div style={{ position: 'relative' }}>
+                                                    <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px' }}>➕</span>
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.house_number_addition || ''}
+                                                        onChange={(e) => setEditForm({ ...editForm, house_number_addition: e.target.value.toUpperCase() })}
+                                                        placeholder="A"
+                                                        style={{
+                                                            width: '100%',
+                                                            padding: '12px 10px 12px 32px',
+                                                            backgroundColor: '#F9FAFB',
+                                                            border: '1px solid #E5E7EB',
+                                                            borderRadius: '10px',
+                                                            fontSize: '14px',
+                                                            outline: 'none',
+                                                            textTransform: 'uppercase',
+                                                        }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div style={{ padding: '4px 0', width: '80px' }}>
+                                                <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: '4px', margin: 0 }}>Add.</p>
+                                                <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                    {editForm.house_number_addition && <span style={{ fontSize: '12px' }}>➕</span>}
+                                                    {editForm.house_number_addition || ''}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Custom Postcode Input with Lookup */}
+                                    {isEditing ? (
+                                        <div ref={postcodeDropdownRef} style={{ position: 'relative' }}>
+                                            <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#6B7280', marginBottom: '8px', textTransform: 'uppercase' }}>Postcode</label>
+                                            <div style={{ position: 'relative' }}>
+                                                <input
+                                                    type="text"
+                                                    value={editForm.postcode || ''}
+                                                    onChange={(e) => {
+                                                        const value = e.target.value.toUpperCase();
+                                                        setEditForm({ ...editForm, postcode: value });
+                                                        lookupPostcode(value);
+                                                    }}
+                                                    placeholder="1234AB"
+                                                    style={{
+                                                        width: '100%',
+                                                        padding: '12px 16px',
+                                                        paddingRight: postcodeLookupLoading ? '40px' : '16px',
+                                                        backgroundColor: '#F9FAFB',
+                                                        border: '1px solid #E5E7EB',
+                                                        borderRadius: '10px',
+                                                        fontSize: '14px',
+                                                        outline: 'none',
+                                                        fontFamily: 'monospace',
+                                                    }}
+                                                />
+                                                {postcodeLookupLoading && (
+                                                    <div style={{
+                                                        position: 'absolute',
+                                                        right: '12px',
+                                                        top: '50%',
+                                                        transform: 'translateY(-50%)',
+                                                        width: '16px',
+                                                        height: '16px',
+                                                        border: '2px solid #E5E7EB',
+                                                        borderTopColor: '#2563EB',
+                                                        borderRadius: '50%',
+                                                        animation: 'spin 1s linear infinite',
+                                                    }} />
+                                                )}
+                                            </div>
+
+                                            {showPostcodeSuggestions && postcodeSuggestions.length > 0 && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '100%',
+                                                    left: 0,
+                                                    right: 0,
+                                                    marginTop: '4px',
+                                                    backgroundColor: '#FFFFFF',
+                                                    border: '1px solid #E5E7EB',
+                                                    borderRadius: '10px',
+                                                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                                                    zIndex: 9999,
+                                                    overflow: 'hidden',
+                                                }}>
+                                                    <div style={{ padding: '8px 12px', borderBottom: '1px solid #E5E7EB', backgroundColor: '#F9FAFB' }}>
+                                                        <span style={{ fontSize: '11px', color: '#6B7280', fontWeight: 600, textTransform: 'uppercase' }}>🛣️ Select Address</span>
+                                                    </div>
+                                                    <div style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                                                        {postcodeSuggestions.map((suggestion, index) => (
+                                                            <div
+                                                                key={index}
+                                                                onClick={() => {
+                                                                    setEditForm({
+                                                                        ...editForm,
+                                                                        city: suggestion.city,
+                                                                        street_name: suggestion.street || editForm.street_name,
+                                                                        // house_number is NOT auto-filled - user must enter it
+                                                                    });
+                                                                    setShowPostcodeSuggestions(false);
+                                                                }}
+                                                                style={{
+                                                                    padding: '12px 14px',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '12px',
+                                                                    cursor: 'pointer',
+                                                                    backgroundColor: 'transparent',
+                                                                    borderBottom: '1px solid #F3F4F6',
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#EFF6FF'}
+                                                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                                            >
+                                                                <div style={{
+                                                                    width: '36px',
+                                                                    height: '36px',
+                                                                    borderRadius: '8px',
+                                                                    backgroundColor: suggestion.street ? '#DBEAFE' : '#F3F4F6',
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    fontSize: '16px'
+                                                                }}>
+                                                                    {suggestion.street ? '🛣️' : '🏙️'}
+                                                                </div>
+                                                                <div style={{ flex: 1 }}>
+                                                                    {suggestion.street ? (
+                                                                        <>
+                                                                            <div style={{ fontSize: '14px', color: '#111827', fontWeight: 600 }}>{suggestion.street}</div>
+                                                                            <div style={{ fontSize: '12px', color: '#6B7280' }}>{suggestion.city}</div>
+                                                                        </>
+                                                                    ) : (
+                                                                        <div style={{ fontSize: '14px', color: '#111827', fontWeight: 500 }}>{suggestion.city}</div>
+                                                                    )}
+                                                                </div>
+                                                                <div style={{
+                                                                    padding: '4px 8px',
+                                                                    backgroundColor: '#ECFDF5',
+                                                                    borderRadius: '4px',
+                                                                    fontSize: '11px',
+                                                                    color: '#059669',
+                                                                    fontWeight: 600
+                                                                }}>
+                                                                    Select
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div style={{ padding: '4px 0' }}>
+                                            <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: '4px', margin: 0 }}>Postcode</p>
+                                            <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0, fontFamily: 'monospace' }}>{editForm.postcode || '—'}</p>
+                                        </div>
+                                    )}
                                 </div>
                             </Card>
 
                             <Card title="Financial Information" icon={CreditCard} iconColor="text-amber-600" iconBg="bg-amber-50">
                                 <div className="grid grid-cols-2 gap-4">
-                                    <Field label="IBAN" value={editForm.iban} editing={isEditing} onChange={v => setEditForm({ ...editForm, iban: v })} />
+                                    <Field label="IBAN" value={editForm.iban} editing={isEditing} onChange={v => setEditForm({ ...editForm, iban: v.toUpperCase().replace(/\s/g, '') })} />
                                     <Field label="Hourly Rate (€)" value={editForm.hourly_rate} editing={isEditing} type="number" onChange={v => setEditForm({ ...editForm, hourly_rate: v })} />
                                 </div>
 
@@ -1331,7 +1990,7 @@ export default function EmployeeDetailPage() {
                                             </select>
                                         ) : <p className="text-sm font-medium">{employee.document_type_name || '—'}</p>}
                                     </div>
-                                    <Field label="Number" value={editForm.document_number} editing={isEditing} onChange={v => setEditForm({ ...editForm, document_number: v })} />
+                                    <Field label="Document Number" value={editForm.document_number} editing={isEditing} onChange={v => setEditForm({ ...editForm, document_number: v.toUpperCase() })} />
                                     <Field label="Issue Date" value={editForm.document_issue_date} editing={isEditing} type="date" onChange={v => setEditForm({ ...editForm, document_issue_date: v })} />
                                     <Field label="Expiry Date" value={editForm.document_expiry_date} editing={isEditing} type="date" onChange={v => setEditForm({ ...editForm, document_expiry_date: v })} />
                                 </div>
@@ -2920,7 +3579,6 @@ function Card({ title, icon: Icon, iconColor, iconBg, badge, children }: { title
             backgroundColor: 'white',
             borderRadius: '16px',
             border: '1px solid #E5E7EB',
-            overflow: 'hidden',
         }}>
             <div style={{
                 padding: '20px 24px',
@@ -2949,7 +3607,7 @@ function Card({ title, icon: Icon, iconColor, iconBg, badge, children }: { title
     );
 }
 
-function Field({ label, value, editing, onChange, type = 'text', options = [], optionLabels = {} }: { label: string; value: string | undefined | null; editing: boolean; onChange?: (v: string) => void; type?: 'text' | 'date' | 'number' | 'select'; options?: string[]; optionLabels?: { [key: string]: string } }) {
+function Field({ label, value, editing, onChange, type = 'text', options = [], optionLabels = {}, optionObjects = [] }: { label: string; value: string | undefined | null; editing: boolean; onChange?: (v: string) => void; type?: 'text' | 'date' | 'number' | 'select'; options?: string[]; optionLabels?: { [key: string]: string }; optionObjects?: { name: string; flag?: string }[] }) {
     const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 600, color: '#6B7280', marginBottom: '8px', textTransform: 'uppercase' as const };
     const inputStyle = {
         width: '100%',
@@ -2962,15 +3620,32 @@ function Field({ label, value, editing, onChange, type = 'text', options = [], o
     };
 
     if (editing && onChange) {
-        if (type === 'select') return (
-            <div>
-                <label style={labelStyle}>{label}</label>
-                <select value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}>
-                    <option value="">Select...</option>
-                    {options.map(o => <option key={o} value={o}>{optionLabels[o] || o}</option>)}
-                </select>
-            </div>
-        );
+        if (type === 'select') {
+            // Use optionObjects if provided (for flags support)
+            if (optionObjects.length > 0) {
+                return (
+                    <div>
+                        <label style={labelStyle}>{label}</label>
+                        <select value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}>
+                            <option value="">Select...</option>
+                            {optionObjects.map(o => (
+                                <option key={o.name} value={o.name}>{o.flag ? `${o.flag} ${o.name}` : o.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                );
+            }
+
+            return (
+                <div>
+                    <label style={labelStyle}>{label}</label>
+                    <select value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}>
+                        <option value="">Select...</option>
+                        {options.map(o => <option key={o} value={o}>{optionLabels[o] || o}</option>)}
+                    </select>
+                </div>
+            );
+        }
         return (
             <div>
                 <label style={labelStyle}>{label}</label>
@@ -2978,10 +3653,23 @@ function Field({ label, value, editing, onChange, type = 'text', options = [], o
             </div>
         );
     }
+
+    // Display mode - show flag for nationality if optionObjects are provided
+    // Format dates as DD/MM/YYYY
+    let displayValue = value || '—';
+    if (type === 'date' && value) {
+        const d = new Date(value);
+        if (!isNaN(d.getTime())) {
+            displayValue = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+        }
+    }
+    const flagObj = optionObjects.find(o => o.name === value);
+    const displayWithFlag = flagObj?.flag ? `${flagObj.flag} ${displayValue}` : displayValue;
+
     return (
         <div style={{ padding: '4px 0' }}>
             <p style={{ fontSize: '12px', fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: '4px', margin: 0 }}>{label}</p>
-            <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0 }}>{value || '—'}</p>
+            <p style={{ fontSize: '14px', fontWeight: 500, color: '#111827', margin: 0 }}>{optionObjects.length > 0 ? displayWithFlag : displayValue}</p>
         </div>
     );
 }

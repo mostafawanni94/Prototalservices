@@ -405,7 +405,7 @@ export default function WorkLogEditPage() {
 
         try {
             const payload: any = {
-                project: parseInt(project),
+                project: project,  // UUID - don't parseInt
                 start_datetime: startDatetime,
                 end_datetime: endDatetime,
                 breaks: breaks.filter(b => b.start && b.end).map(b => ({
@@ -419,7 +419,7 @@ export default function WorkLogEditPage() {
 
             // Only include supervisor if selected (not empty)
             if (supervisor && supervisor !== '0') {
-                payload.supervisor = parseInt(supervisor);
+                payload.supervisor = supervisor;  // UUID - don't parseInt
             }
 
             // Only include service if selected
@@ -469,15 +469,22 @@ export default function WorkLogEditPage() {
 
     async function handleApprove() {
         setSaving(true);
+        setErrors({});
         try {
             const response = await fetch(`${API_URL}/worklogs/${params.id}/approve/`, {
                 method: 'POST',
                 headers,
             });
-            if (!response.ok) throw new Error('Failed to approve');
-            router.push('/dashboard/worklogs');
+            if (!response.ok) {
+                const data = await response.json();
+                // Reload data to refresh the status in case it changed
+                await loadAllData();
+                throw new Error(data.error || data.detail || 'Failed to approve');
+            }
+            // Reload data to show updated status
+            await loadAllData();
         } catch (err) {
-            setErrors({ general: err instanceof Error ? err.message : 'Failed' });
+            setErrors({ general: err instanceof Error ? err.message : 'Failed to approve' });
         } finally {
             setSaving(false);
         }
@@ -487,6 +494,7 @@ export default function WorkLogEditPage() {
         const reason = prompt('Enter rejection reason:');
         if (!reason) return;
         setSaving(true);
+        setErrors({});
         try {
             const response = await fetch(`${API_URL}/worklogs/${params.id}/reject/`, {
                 method: 'POST',
@@ -496,10 +504,16 @@ export default function WorkLogEditPage() {
                 },
                 body: JSON.stringify({ reason }),
             });
-            if (!response.ok) throw new Error('Failed to reject');
-            router.push('/dashboard/worklogs');
+            if (!response.ok) {
+                const data = await response.json();
+                // Reload data to refresh the status in case it changed
+                await loadAllData();
+                throw new Error(data.error || data.detail || 'Failed to reject');
+            }
+            // Reload data to show updated status
+            await loadAllData();
         } catch (err) {
-            setErrors({ general: err instanceof Error ? err.message : 'Failed' });
+            setErrors({ general: err instanceof Error ? err.message : 'Failed to reject' });
         } finally {
             setSaving(false);
         }
@@ -550,7 +564,7 @@ export default function WorkLogEditPage() {
                     borderBottom: '1px solid rgba(255,255,255,0.1)'
                 }}>
                     <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
-                        {/* Top row: Back button + Actions */}
+                        {/* Top row: Back button + Approve/Reject */}
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
                             <button
                                 onClick={() => router.push('/dashboard/worklogs')}
@@ -566,7 +580,7 @@ export default function WorkLogEditPage() {
                                 <ArrowLeft size={14} /> Back
                             </button>
 
-                            {status === 'pending' && (
+                            {(status === 'pending' || status === 'submitted') && (
                                 <div style={{ display: 'flex', gap: '10px' }}>
                                     <button
                                         onClick={handleApprove}
@@ -574,7 +588,9 @@ export default function WorkLogEditPage() {
                                         style={{
                                             display: 'flex', alignItems: 'center', gap: '6px',
                                             padding: '8px 16px', backgroundColor: '#10B981', color: 'white',
-                                            border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                                            border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+                                            cursor: saving ? 'not-allowed' : 'pointer',
+                                            opacity: saving ? 0.7 : 1,
                                         }}
                                     >
                                         <CheckCircle size={14} /> Approve
@@ -585,7 +601,9 @@ export default function WorkLogEditPage() {
                                         style={{
                                             display: 'flex', alignItems: 'center', gap: '6px',
                                             padding: '8px 16px', backgroundColor: '#EF4444', color: 'white',
-                                            border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+                                            border: 'none', borderRadius: '8px', fontSize: '13px', fontWeight: 600,
+                                            cursor: saving ? 'not-allowed' : 'pointer',
+                                            opacity: saving ? 0.7 : 1,
                                         }}
                                     >
                                         <XCircle size={14} /> Reject
@@ -647,30 +665,31 @@ export default function WorkLogEditPage() {
                                     }} />
                                     {status.charAt(0).toUpperCase() + status.slice(1)}
                                 </div>
-                                <select
-                                    value={status}
-                                    onChange={(e) => setStatus(e.target.value)}
-                                    style={{
-                                        appearance: 'none',
-                                        padding: '6px 10px',
-                                        borderRadius: '6px',
-                                        fontSize: '11px',
-                                        fontWeight: 500,
-                                        cursor: 'pointer',
-                                        backgroundColor: 'rgba(255,255,255,0.15)',
-                                        border: '1px solid rgba(255,255,255,0.2)',
-                                        color: 'white',
-                                        outline: 'none',
-                                        width: '28px',
-                                        textAlign: 'center',
-                                    }}
-                                    title="Change status"
-                                >
-                                    <option value="draft" style={{ color: '#333' }}>Draft</option>
-                                    <option value="pending" style={{ color: '#333' }}>Pending</option>
-                                    <option value="approved" style={{ color: '#333' }}>Approved</option>
-                                    <option value="rejected" style={{ color: '#333' }}>Rejected</option>
-                                </select>
+                                {/* Only show status dropdown for editable statuses */}
+                                {(status === 'draft' || status === 'pending' || status === 'submitted') && (
+                                    <select
+                                        value={status}
+                                        onChange={(e) => setStatus(e.target.value)}
+                                        style={{
+                                            appearance: 'none',
+                                            padding: '6px 12px',
+                                            borderRadius: '6px',
+                                            fontSize: '12px',
+                                            fontWeight: 500,
+                                            cursor: 'pointer',
+                                            backgroundColor: 'rgba(255,255,255,0.15)',
+                                            border: '1px solid rgba(255,255,255,0.2)',
+                                            color: 'white',
+                                            outline: 'none',
+                                            minWidth: '100px',
+                                        }}
+                                        title="Change status"
+                                    >
+                                        <option value="draft" style={{ color: '#333' }}>Draft</option>
+                                        <option value="pending" style={{ color: '#333' }}>Pending</option>
+                                        <option value="submitted" style={{ color: '#333' }}>Submitted</option>
+                                    </select>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1270,34 +1289,40 @@ export default function WorkLogEditPage() {
 
                     {/* Action Buttons */}
                     <div style={{
-                        display: 'flex', gap: '16px', justifyContent: 'flex-end',
+                        display: 'flex', gap: '16px', justifyContent: 'space-between',
                         padding: '24px', backgroundColor: 'white', borderRadius: '16px',
                         boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
                     }}>
-                        <button
-                            onClick={() => router.push('/dashboard/worklogs')}
-                            style={{
-                                padding: '14px 28px', backgroundColor: '#F3F4F6', color: '#374151',
-                                border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleSave}
-                            disabled={saving || !hasChanges}
-                            style={{
-                                padding: '14px 36px',
-                                backgroundColor: hasChanges ? '#1E3A5F' : '#9CA3AF',
-                                color: 'white',
-                                border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600,
-                                cursor: saving || !hasChanges ? 'not-allowed' : 'pointer',
-                                opacity: saving ? 0.7 : 1,
-                            }}
-                        >
-                            {saving ? 'Saving...' : hasChanges ? 'Save Changes' : 'No Changes'}
-                        </button>
+                        {/* Empty div for spacing */}
+                        <div></div>
+
+                        {/* Right side: Cancel/Save buttons */}
+                        <div style={{ display: 'flex', gap: '16px' }}>
+                            <button
+                                onClick={() => router.push('/dashboard/worklogs')}
+                                style={{
+                                    padding: '14px 28px', backgroundColor: '#F3F4F6', color: '#374151',
+                                    border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={saving || !hasChanges}
+                                style={{
+                                    padding: '14px 36px',
+                                    backgroundColor: hasChanges ? '#1E3A5F' : '#9CA3AF',
+                                    color: 'white',
+                                    border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600,
+                                    cursor: saving || !hasChanges ? 'not-allowed' : 'pointer',
+                                    opacity: saving ? 0.7 : 1,
+                                }}
+                            >
+                                {saving ? 'Saving...' : hasChanges ? 'Save Changes' : 'No Changes'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

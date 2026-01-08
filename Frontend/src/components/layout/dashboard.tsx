@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { useLanguage } from '@/lib/i18n';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     LayoutDashboard,
     Users,
@@ -46,6 +46,23 @@ function Sidebar({
     const pathname = usePathname();
     const router = useRouter();
     const { t, isRTL } = useLanguage();
+    const navRef = useRef<HTMLElement>(null);
+
+    // Restore sidebar scroll position on mount
+    useEffect(() => {
+        const savedScrollTop = sessionStorage.getItem('sidebarScrollTop');
+        if (savedScrollTop && navRef.current) {
+            navRef.current.scrollTop = parseInt(savedScrollTop, 10);
+        }
+    }, []);
+
+    // Save sidebar scroll position before navigation
+    const handleNavClick = () => {
+        if (navRef.current) {
+            sessionStorage.setItem('sidebarScrollTop', navRef.current.scrollTop.toString());
+        }
+        onClose();
+    };
 
     const mainNavItems = [
         { name: t('dashboard'), href: '/dashboard', icon: LayoutDashboard },
@@ -54,7 +71,6 @@ function Sidebar({
         { name: t('projects'), href: '/dashboard/projects', icon: FolderKanban },
         { name: 'Services', href: '/dashboard/services', icon: CreditCard },
         { name: t('worklogs'), href: '/dashboard/worklogs', icon: Clock },
-        { name: 'Shifts', href: '/dashboard/shifts', icon: Calendar },
         { name: t('invoices'), href: '/dashboard/invoices', icon: FileText },
         { name: 'Certificates', href: '/dashboard/certificates', icon: Award },
         { name: 'Allowances', href: '/dashboard/allowances', icon: Gift },
@@ -86,7 +102,8 @@ function Sidebar({
         return (
             <Link
                 href={item.href}
-                onClick={onClose}
+                onClick={handleNavClick}
+                scroll={false}
                 title={isCollapsed ? item.name : undefined}
                 style={{
                     display: 'flex',
@@ -210,7 +227,7 @@ function Sidebar({
                     </div>
 
                     {/* Navigation */}
-                    <nav style={{
+                    <nav ref={navRef} style={{
                         flex: 1,
                         overflowY: 'auto',
                         padding: isCollapsed ? '24px 16px' : '24px 20px',
@@ -577,10 +594,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
                 }}
             >
                 <Header onMenuClick={() => setSidebarOpen(true)} />
-                <main style={{
+                <main id="main-content" style={{
                     flex: 1,
                     padding: '32px 0',
-                    overflow: 'auto',
                 }}>
                     {children}
                 </main>

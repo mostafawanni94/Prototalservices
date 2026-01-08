@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import '../../../../core/widgets/app_widgets.dart';
 import '../../../../core/network/api_client.dart';
@@ -63,7 +64,13 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
   @override
   void initState() {
     super.initState();
+    _locationController.addListener(_onLocationChanged);
     _loadInitialData();
+  }
+
+  void _onLocationChanged() {
+    // Trigger rebuild when location text changes to update button state
+    setState(() {});
   }
 
   Future<void> _loadInitialData() async {
@@ -162,13 +169,157 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
     if (projectId != null) {
       final project = _projects.firstWhere((p) => p['id'].toString() == projectId, orElse: () => null);
       if (project != null) {
-        final address = project['address'] ?? '';
-        final city = project['city'] ?? '';
+        final address = project['location_address']?.toString() ?? '';
+        final city = project['location_city']?.toString() ?? '';
+        final locationName = project['location']?.toString() ?? '';
+        
+        String locationText = '';
         if (address.isNotEmpty || city.isNotEmpty) {
-          _locationController.text = '$address, $city'.trim();
+          // Use detailed address if available
+          final parts = <String>[];
+          if (address.isNotEmpty) parts.add(address);
+          if (city.isNotEmpty) parts.add(city);
+          locationText = parts.join(', ');
+        } else if (locationName.isNotEmpty) {
+          // Fallback to location name
+          locationText = locationName;
+        }
+        
+        if (locationText.isNotEmpty) {
+          setState(() {
+            _locationController.text = locationText;
+          });
         }
       }
     }
+  }
+
+  void _showMapsAppChooser(String address) {
+    final encodedAddress = Uri.encodeComponent(address);
+    
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Open in Maps',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              address,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+            ),
+            const SizedBox(height: 20),
+            
+            // Google Maps
+            _buildMapOption(
+              icon: Icons.map,
+              iconColor: Colors.red,
+              title: 'Google Maps',
+              onTap: () async {
+                Navigator.pop(context);
+                final url = 'https://www.google.com/maps/search/?api=1&query=$encodedAddress';
+                if (await canLaunchUrl(Uri.parse(url))) {
+                  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+            
+            // Apple Maps (iOS only)
+            if (Platform.isIOS) ...[
+              const SizedBox(height: 12),
+              _buildMapOption(
+                icon: Icons.map_outlined,
+                iconColor: Colors.blue,
+                title: 'Apple Maps',
+                onTap: () async {
+                  Navigator.pop(context);
+                  final url = 'https://maps.apple.com/?q=$encodedAddress';
+                  if (await canLaunchUrl(Uri.parse(url))) {
+                    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                  }
+                },
+              ),
+            ],
+            
+            // Waze
+            const SizedBox(height: 12),
+            _buildMapOption(
+              icon: Icons.navigation,
+              iconColor: Colors.cyan,
+              title: 'Waze',
+              onTap: () async {
+                Navigator.pop(context);
+                final url = 'https://waze.com/ul?q=$encodedAddress&navigate=yes';
+                if (await canLaunchUrl(Uri.parse(url))) {
+                  await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+                }
+              },
+            ),
+            
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMapOption({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: iconColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: iconColor, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
+            ),
+            Icon(Icons.chevron_right, color: Colors.grey.shade400),
+          ],
+        ),
+      ),
+    );
   }
 
   void _addAllowance() {
@@ -407,6 +558,57 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
                       controller: _locationController,
                       hint: 'Location address...',
                       icon: Icons.location_on,
+                    ),
+                    const SizedBox(height: 8),
+                    // View in Maps button
+                    GestureDetector(
+                      onTap: _locationController.text.isNotEmpty 
+                          ? () => _showMapsAppChooser(_locationController.text)
+                          : null,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: _locationController.text.isNotEmpty 
+                              ? Colors.blue.shade50 
+                              : Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _locationController.text.isNotEmpty 
+                                ? Colors.blue.shade200 
+                                : Colors.grey.shade300,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.map_outlined, 
+                              color: _locationController.text.isNotEmpty 
+                                  ? Colors.blue.shade700 
+                                  : Colors.grey.shade400, 
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'View in Maps',
+                              style: TextStyle(
+                                color: _locationController.text.isNotEmpty 
+                                    ? Colors.blue.shade700 
+                                    : Colors.grey.shade400, 
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              Icons.open_in_new, 
+                              color: _locationController.text.isNotEmpty 
+                                  ? Colors.blue.shade700 
+                                  : Colors.grey.shade400, 
+                              size: 16,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 24),
                   ],
@@ -800,7 +1002,11 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
           final startTime = wl['start_time']?.toString().substring(0, 5) ?? '--:--';
           final endTime = wl['end_time']?.toString().substring(0, 5) ?? '--:--';
           final projectName = wl['project_name'] ?? wl['project']?['name'] ?? 'Unknown Project';
-          final hours = wl['calculated_hours']?.toStringAsFixed(1) ?? '0.0';
+          // Parse calculated_hours - handle both String and double
+          final rawHours = wl['calculated_hours'];
+          final hours = rawHours is num 
+              ? rawHours.toStringAsFixed(1) 
+              : (double.tryParse(rawHours?.toString() ?? '0') ?? 0.0).toStringAsFixed(1);
           
           Color statusColor;
           IconData statusIcon;
@@ -1132,6 +1338,7 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
 
   @override
   void dispose() {
+    _locationController.removeListener(_onLocationChanged);
     _notesController.dispose();
     _locationController.dispose();
     super.dispose();

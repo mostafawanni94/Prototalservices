@@ -1,9 +1,10 @@
 /// Work Logs Screen - Enhanced History View
 /// 
-/// Shows work history with status tabs, earnings, and filtering.
+/// Shows work history with weekly hours summary and day filtering.
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
 import '../viewmodels/invoice_viewmodel.dart';
 import '../../data/invoice_service.dart';
 import '../../../../core/widgets/app_widgets.dart';
@@ -17,17 +18,37 @@ class WorkLogsScreen extends StatefulWidget {
 
 class _WorkLogsScreenState extends State<WorkLogsScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  DateTime? _startDate;
-  DateTime? _endDate;
+  late ScrollController _scrollController;
+  
+  // Week selection
+  late DateTime _selectedWeekStart;
+  DateTime? _selectedDay; // null means show all days in the week
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(_onTabChanged);
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onScroll);
+    // Initialize to current week (Monday)
+    _selectedWeekStart = _getWeekStart(DateTime.now());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<InvoiceViewModel>().loadWorkLogs();
     });
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      // Load more when user is near the bottom
+      context.read<InvoiceViewModel>().loadMoreWorkLogs();
+    }
+  }
+
+  /// Get Monday of the week containing the given date
+  DateTime _getWeekStart(DateTime date) {
+    final weekday = date.weekday; // 1 = Monday, 7 = Sunday
+    return DateTime(date.year, date.month, date.day - (weekday - 1));
   }
 
   void _onTabChanged() {
@@ -43,23 +64,104 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> with SingleTickerProvid
   @override
   void dispose() {
     _tabController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  void _previousWeek() {
+    setState(() {
+      _selectedWeekStart = _selectedWeekStart.subtract(const Duration(days: 7));
+      _selectedDay = null;
+    });
+  }
+
+  void _nextWeek() {
+    setState(() {
+      _selectedWeekStart = _selectedWeekStart.add(const Duration(days: 7));
+      _selectedDay = null;
+    });
+  }
+
+  void _selectDay(DateTime day) {
+    setState(() {
+      if (_selectedDay != null && 
+          _selectedDay!.year == day.year && 
+          _selectedDay!.month == day.month && 
+          _selectedDay!.day == day.day) {
+        // Deselect if already selected
+        _selectedDay = null;
+      } else {
+        _selectedDay = day;
+      }
+    });
+  }
+
+  int _getIsoWeekNumber(DateTime date) {
+    final jan1 = DateTime(date.year, 1, 1);
+    final jan1Weekday = jan1.weekday;
+    final firstThursday = jan1.add(Duration(days: (4 - jan1Weekday + 7) % 7));
+    final diff = date.difference(firstThursday).inDays;
+    return (diff / 7).floor() + 1;
+  }
+
+  /// Filter logs by selected week and day
+  List<WorkLogModel> _filterLogsByWeekAndDay(List<WorkLogModel> logs) {
+    final weekEnd = _selectedWeekStart.add(const Duration(days: 7));
+    
+    return logs.where((log) {
+      // First filter by week
+      if (log.workDate.isBefore(_selectedWeekStart) || !log.workDate.isBefore(weekEnd)) {
+        return false;
+      }
+      
+      // Then filter by day if selected
+      if (_selectedDay != null) {
+        final isSameDay = log.workDate.year == _selectedDay!.year &&
+            log.workDate.month == _selectedDay!.month &&
+            log.workDate.day == _selectedDay!.day;
+        if (!isSameDay) return false;
+      }
+      
+      return true;
+    }).toList();
+  }
+
+  /// Calculate total hours for the week
+  double _calculateWeekTotalHours(List<WorkLogModel> allLogs) {
+    final weekEnd = _selectedWeekStart.add(const Duration(days: 7));
+    return allLogs.where((log) {
+      return !log.workDate.isBefore(_selectedWeekStart) && log.workDate.isBefore(weekEnd);
+    }).fold(0.0, (sum, log) => sum + log.billableHours);
+  }
+
+  /// Calculate hours for a specific day
+  double _getHoursForDay(List<WorkLogModel> allLogs, DateTime day) {
+    return allLogs.where((log) {
+      return log.workDate.year == day.year &&
+          log.workDate.month == day.month &&
+          log.workDate.day == day.day;
+    }).fold(0.0, (sum, log) => sum + log.billableHours);
+  }
+
+  /// Check if a day has work logs
+  bool _dayHasLogs(List<WorkLogModel> allLogs, DateTime day) {
+    return allLogs.any((log) {
+      return log.workDate.year == day.year &&
+          log.workDate.month == day.month &&
+          log.workDate.day == day.day;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final weekNumber = _getIsoWeekNumber(_selectedWeekStart);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: const Text('Work History'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.date_range),
-            onPressed: _showDateRangePicker,
-          ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -79,32 +181,57 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> with SingleTickerProvid
             return const Center(child: CircularProgressIndicator());
           }
 
+          final weekTotalHours = _calculateWeekTotalHours(vm.allWorkLogs);
+          final filteredLogs = _filterLogsByWeekAndDay(vm.filteredWorkLogs);
+
           return Column(
             children: [
-              // Earnings Summary
-              _buildEarningsSummary(vm),
+              // Week Selector & Hours Summary
+              _buildWeekSelector(weekNumber, weekTotalHours),
               
-              // Date Filter Display
-              if (_startDate != null && _endDate != null)
-                _buildDateFilterChip(),
+              // Day Selector
+              _buildDaySelector(vm.allWorkLogs),
+              
+              // Selected day info
+              if (_selectedDay != null)
+                _buildSelectedDayInfo(vm.allWorkLogs, filteredLogs.length),
               
               // Work Logs List
               Expanded(
-                child: vm.filteredWorkLogs.isEmpty
+                child: filteredLogs.isEmpty
                     ? EmptyState(
                         icon: Icons.work_off_outlined,
-                        title: _getEmptyStateTitle(vm.workLogFilter),
-                        message: _getEmptyStateMessage(vm.workLogFilter),
+                        title: _selectedDay != null 
+                            ? 'No work logs for this day'
+                            : 'No work logs this week',
+                        message: 'Work logs will appear here when submitted',
                       )
                     : RefreshIndicator(
                         onRefresh: () => vm.loadWorkLogs(),
                         child: ListView.builder(
+                          controller: _scrollController,
                           padding: const EdgeInsets.all(16),
-                          itemCount: vm.filteredWorkLogs.length,
-                          itemBuilder: (_, i) => _WorkLogCard(
-                            workLog: vm.filteredWorkLogs[i],
-                            onTap: () => _showWorkLogDetails(vm.filteredWorkLogs[i]),
-                          ),
+                          itemCount: filteredLogs.length + (vm.hasMore || vm.isLoadingMore ? 1 : 0),
+                          itemBuilder: (_, i) {
+                            // Show loading indicator at the end
+                            if (i == filteredLogs.length) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                child: Center(
+                                  child: vm.isLoadingMore
+                                      ? const CircularProgressIndicator()
+                                      : TextButton(
+                                          onPressed: () => vm.loadMoreWorkLogs(),
+                                          child: const Text('Load more'),
+                                        ),
+                                ),
+                              );
+                            }
+                            return _WorkLogCard(
+                              workLog: filteredLogs[i],
+                              onTap: () => _showWorkLogDetails(filteredLogs[i]),
+                            );
+                          },
                         ),
                       ),
               ),
@@ -115,136 +242,210 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> with SingleTickerProvid
     );
   }
 
-  Widget _buildEarningsSummary(InvoiceViewModel vm) {
+  /// Week selector with navigation and total hours
+  Widget _buildWeekSelector(int weekNumber, double totalHours) {
     return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.primary,
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _SummaryItem(
-                label: 'Approved',
-                value: '€${vm.totalApprovedEarnings.toStringAsFixed(2)}',
-                icon: Icons.check_circle,
-                iconColor: Colors.greenAccent,
-              ),
-              Container(width: 1, height: 50, color: Colors.white24),
-              _SummaryItem(
-                label: 'Pending',
-                value: '€${vm.totalPendingEarnings.toStringAsFixed(2)}',
-                icon: Icons.schedule,
-                iconColor: Colors.orangeAccent,
-              ),
-            ],
-          ),
-          if (vm.pendingCount > 0) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.orangeAccent, size: 16),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${vm.pendingCount} pending approval',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDateFilterChip() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Chip(
-            label: Text(
-              '${_formatDate(_startDate!)} - ${_formatDate(_endDate!)}',
-              style: const TextStyle(fontSize: 12),
+          // Previous week button
+          Material(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _previousWeek,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.chevron_left, color: Colors.white, size: 24),
+              ),
             ),
-            deleteIcon: const Icon(Icons.close, size: 16),
-            onDeleted: () {
-              setState(() {
-                _startDate = null;
-                _endDate = null;
-              });
-              context.read<InvoiceViewModel>().setDateFilter(DateFilter.thisWeek);
-            },
-            backgroundColor: AppColors.primary.withOpacity(0.1),
+          ),
+          
+          // Week info & total hours
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  'Week $weekNumber, ${_selectedWeekStart.year}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${totalHours.toStringAsFixed(1)} hours total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Next week button
+          Material(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _nextWeek,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.chevron_right, color: Colors.white, size: 24),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  String _formatDate(DateTime date) => '${date.day}/${date.month}/${date.year}';
+  /// Day selector row showing days of the week
+  Widget _buildDaySelector(List<WorkLogModel> allLogs) {
+    final days = List.generate(7, (i) => _selectedWeekStart.add(Duration(days: i)));
+    final dayNames = ['MA', 'DI', 'WO', 'DO', 'VR', 'ZA', 'ZO'];
+    final today = DateTime.now();
 
-  String _getEmptyStateTitle(WorkLogFilter filter) {
-    switch (filter) {
-      case WorkLogFilter.approved: return 'No approved logs';
-      case WorkLogFilter.pending: return 'No pending logs';
-      case WorkLogFilter.rejected: return 'No rejected logs';
-      default: return 'No work logs';
-    }
-  }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      color: AppColors.primary.withOpacity(0.9),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(7, (index) {
+          final day = days[index];
+          final isSelected = _selectedDay != null &&
+              _selectedDay!.year == day.year &&
+              _selectedDay!.month == day.month &&
+              _selectedDay!.day == day.day;
+          final isToday = day.year == today.year &&
+              day.month == today.month &&
+              day.day == today.day;
+          final hasLogs = _dayHasLogs(allLogs, day);
 
-  String _getEmptyStateMessage(WorkLogFilter filter) {
-    switch (filter) {
-      case WorkLogFilter.approved: return 'Your approved work will appear here';
-      case WorkLogFilter.pending: return 'Logs awaiting approval will appear here';
-      case WorkLogFilter.rejected: return 'Logs that need editing will appear here';
-      default: return 'Start logging your work to see history';
-    }
-  }
-
-  Future<void> _showDateRangePicker() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
-      initialDateRange: _startDate != null && _endDate != null
-          ? DateTimeRange(start: _startDate!, end: _endDate!)
-          : null,
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => _selectDay(day),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected 
+                      ? Colors.orange 
+                      : (isToday ? Colors.white.withOpacity(0.15) : Colors.transparent),
+                  borderRadius: BorderRadius.circular(12),
+                  border: isToday && !isSelected 
+                      ? Border.all(color: Colors.white.withOpacity(0.5), width: 1)
+                      : null,
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      dayNames[index],
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${day.day}',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: isSelected || isToday ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    // Hours indicator dot
+                    if (hasLogs)
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: isSelected ? Colors.white : Colors.greenAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 6),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
     );
-    if (picked != null) {
-      setState(() {
-        _startDate = picked.start;
-        _endDate = picked.end;
-      });
-      context.read<InvoiceViewModel>().setDateFilter(
-        DateFilter.custom,
-        start: picked.start,
-        end: picked.end,
-      );
-    }
+  }
+
+  /// Info bar showing selected day details
+  Widget _buildSelectedDayInfo(List<WorkLogModel> allLogs, int logsCount) {
+    final hoursForDay = _getHoursForDay(allLogs, _selectedDay!);
+    final dayName = DateFormat('EEEE d MMMM, yyyy').format(_selectedDay!);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: Colors.orange.shade50,
+      child: Row(
+        children: [
+          Icon(Icons.calendar_today, color: Colors.orange.shade700, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              dayName,
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade200,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${hoursForDay.toStringAsFixed(1)}h • $logsCount logs',
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => setState(() => _selectedDay = null),
+            child: Icon(Icons.close, color: Colors.orange.shade700, size: 20),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showWorkLogDetails(WorkLogModel log) {
@@ -255,40 +456,6 @@ class _WorkLogsScreenState extends State<WorkLogsScreen> with SingleTickerProvid
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => _WorkLogDetailsSheet(workLog: log),
-    );
-  }
-}
-
-class _SummaryItem extends StatelessWidget {
-  final String label;
-  final String value;
-  final IconData icon;
-  final Color iconColor;
-
-  const _SummaryItem({
-    required this.label,
-    required this.value,
-    required this.icon,
-    this.iconColor = Colors.white70,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Icon(icon, color: iconColor, size: 24),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-      ],
     );
   }
 }
@@ -353,35 +520,9 @@ class _WorkLogCard extends StatelessWidget {
                 ],
               ),
               
-              const SizedBox(height: 12),
-              
-              // Earnings (only for approved)
-              if (workLog.isDone && workLog.estimatedEarnings != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.euro, color: AppColors.success, size: 16),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${workLog.estimatedEarnings!.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                          color: AppColors.success,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              
               // Pending status message
-              if (workLog.isPending)
+              if (workLog.isPending) ...[
+                const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
@@ -400,9 +541,11 @@ class _WorkLogCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              ],
               
               // Rejection reason
-              if (workLog.needsEdit && workLog.rejectionReason != null)
+              if (workLog.needsEdit && workLog.rejectionReason != null) ...[
+                const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -422,6 +565,7 @@ class _WorkLogCard extends StatelessWidget {
                     ],
                   ),
                 ),
+              ],
             ],
           ),
         ),
@@ -558,32 +702,6 @@ class _WorkLogDetailsSheet extends StatelessWidget {
               _buildDetailRow('Location', workLog.location!),
             _buildDetailRow('Status', workLog.statusLabel),
             
-            if (workLog.isDone && workLog.estimatedEarnings != null) ...[
-              const Divider(height: 32),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.success.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: [
-                    const Text('Estimated Earnings', style: TextStyle(color: AppColors.success, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text(
-                      '€${workLog.estimatedEarnings!.toStringAsFixed(2)}',
-                      style: const TextStyle(
-                        color: AppColors.success,
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            
             if (workLog.notes != null && workLog.notes!.isNotEmpty) ...[
               const SizedBox(height: 16),
               const Text('Notes', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
@@ -612,11 +730,11 @@ class _WorkLogDetailsSheet extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    const Row(
                       children: [
-                        const Icon(Icons.warning_amber, color: AppColors.error, size: 20),
-                        const SizedBox(width: 8),
-                        const Text(
+                        Icon(Icons.warning_amber, color: AppColors.error, size: 20),
+                        SizedBox(width: 8),
+                        Text(
                           'Correction Required',
                           style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold),
                         ),

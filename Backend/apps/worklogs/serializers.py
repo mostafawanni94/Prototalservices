@@ -43,6 +43,9 @@ class WorkLogSerializer(serializers.ModelSerializer):
     # Calculate earnings for employee
     estimated_earnings = serializers.SerializerMethodField()
     
+    # Shift assignment info for unified view
+    shift_assignment_info = serializers.SerializerMethodField()
+    
     class Meta:
         model = WorkLog
         fields = '__all__'
@@ -91,6 +94,20 @@ class WorkLogSerializer(serializers.ModelSerializer):
             'allowances_amount': round(allowances_amount, 2),
             'total': round(base_amount + allowances_amount, 2),
         }
+    
+    def get_shift_assignment_info(self, obj):
+        """Return info about the linked shift assignment if any."""
+        if not obj.shift_assignment:
+            return None
+        sa = obj.shift_assignment
+        pd = sa.planned_day
+        return {
+            'id': str(sa.id),
+            'date': pd.date.isoformat(),
+            'shift_name': pd.shift_template.name,
+            'shift_color': pd.shift_template.color,
+            'project_name': pd.shift_template.project.name,
+        }
 
 
 class WorkLogCreateSerializer(serializers.ModelSerializer):
@@ -106,15 +123,26 @@ class WorkLogCreateSerializer(serializers.ModelSerializer):
             'break_duration_minutes', 'break_start_time', 'break_end_time', 
             'breaks',  # Multiple breaks array
             'notes', 'supervisor', 'service', 'location_override', 'status',
-            'allowances'
+            'allowances', 'shift_assignment'  # Link to planning system
         ]
         extra_kwargs = {
+            'project': {'required': False, 'allow_null': True},  # Made optional - extracted from shift_assignment
             'work_date': {'required': False},
             'start_time': {'required': False},
             'end_time': {'required': False},
+            'shift_assignment': {'required': False, 'allow_null': True},
         }
     
     def validate(self, data):
+        # If shift_assignment is provided, extract project from it
+        shift_assignment = data.get('shift_assignment')
+        if shift_assignment and not data.get('project'):
+            # Get project from shift_assignment's planned_day's shift_template
+            try:
+                data['project'] = shift_assignment.planned_day.shift_template.project
+            except Exception:
+                pass
+        
         # If new datetime fields are provided, use them
         if data.get('start_datetime') and data.get('end_datetime'):
             if data['end_datetime'] <= data['start_datetime']:

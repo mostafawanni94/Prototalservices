@@ -262,11 +262,16 @@ class AssignedShift {
   final String projectLocation;
   final String projectAddress;
   final String projectCity;
+  final String projectDescription;
+  final String customerName;
   final String? supervisorName;
+  final String? supervisorPhone;
+  final String? supervisorEmail;
   final String notes;
   final bool isToday;
   final bool isPast;
   final bool canEdit;
+  final List<AssignedShiftWorkLog> workLogs;
 
   AssignedShift({
     required this.id,
@@ -281,14 +286,20 @@ class AssignedShift {
     required this.projectLocation,
     required this.projectAddress,
     required this.projectCity,
+    required this.projectDescription,
+    required this.customerName,
     this.supervisorName,
+    this.supervisorPhone,
+    this.supervisorEmail,
     required this.notes,
     required this.isToday,
     required this.isPast,
     required this.canEdit,
+    required this.workLogs,
   });
 
   factory AssignedShift.fromJson(Map<String, dynamic> json) {
+    final workLogsJson = json['work_logs'] as List? ?? [];
     return AssignedShift(
       id: json['id'] ?? '',
       status: json['status'] ?? 'planned',
@@ -302,11 +313,16 @@ class AssignedShift {
       projectLocation: json['project_location'] ?? '',
       projectAddress: json['project_address'] ?? '',
       projectCity: json['project_city'] ?? '',
+      projectDescription: json['project_description'] ?? '',
+      customerName: json['customer_name'] ?? '',
       supervisorName: json['supervisor_name'],
+      supervisorPhone: json['supervisor_phone'],
+      supervisorEmail: json['supervisor_email'],
       notes: json['notes'] ?? '',
       isToday: json['is_today'] ?? false,
       isPast: json['is_past'] ?? false,
       canEdit: json['can_edit'] ?? false,
+      workLogs: workLogsJson.map((wl) => AssignedShiftWorkLog.fromJson(wl)).toList(),
     );
   }
   
@@ -316,5 +332,35 @@ class AssignedShift {
         .where((p) => p.isNotEmpty)
         .toList();
     return parts.join(', ');
+  }
+  
+  /// Check if this shift has a submitted/approved work log
+  bool get hasWorkLog => workLogs.isNotEmpty;
+  
+  /// Get the latest work log status
+  String? get latestWorkLogStatus => workLogs.isNotEmpty ? workLogs.first.status : null;
+}
+
+/// Work log attached to an assigned shift
+class AssignedShiftWorkLog {
+  final String id;
+  final String status;
+  final String calculatedHours;
+  final String? workDate;
+
+  AssignedShiftWorkLog({
+    required this.id,
+    required this.status,
+    required this.calculatedHours,
+    this.workDate,
+  });
+
+  factory AssignedShiftWorkLog.fromJson(Map<String, dynamic> json) {
+    return AssignedShiftWorkLog(
+      id: json['id'] ?? '',
+      status: json['status'] ?? '',
+      calculatedHours: json['calculated_hours'] ?? '0.00',
+      workDate: json['work_date'],
+    );
   }
 }

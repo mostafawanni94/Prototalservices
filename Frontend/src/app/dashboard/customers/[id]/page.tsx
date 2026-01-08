@@ -79,7 +79,11 @@ export default function CustomerDetailPage() {
         city: '',
         postcode: '',
         address: '',
+        street_name: '',
+        house_number: '',
+        house_number_addition: '',
         country: '',
+        website: '',
         iban: '',
         btw_number: '',
         kvk_number: '',
@@ -286,7 +290,11 @@ export default function CustomerDetailPage() {
                 city: data.city || '',
                 postcode: data.postcode || '',
                 address: data.address || '',
+                street_name: data.street_name || '',
+                house_number: data.house_number || '',
+                house_number_addition: data.house_number_addition || '',
                 country: data.country || 'Netherlands',
+                website: data.website || '',
                 iban: data.iban || '',
                 btw_number: data.btw_number || '',
                 kvk_number: data.kvk_number || '',
@@ -801,8 +809,26 @@ export default function CustomerDetailPage() {
             formData.append('company_name', editForm.company_name);
             formData.append('city', editForm.city);
             formData.append('postcode', editForm.postcode);
-            formData.append('address', editForm.address);
+            // Build combined address for legacy field
+            const combinedAddress = [editForm.street_name, editForm.house_number, editForm.house_number_addition].filter(Boolean).join(' ');
+            formData.append('address', combinedAddress || editForm.address);
+            formData.append('street_name', editForm.street_name);
+            formData.append('house_number', editForm.house_number);
+            formData.append('house_number_addition', editForm.house_number_addition);
             formData.append('country', editForm.country || 'Netherlands');
+            if (editForm.website) {
+                // Auto-format website: add https://www. if needed
+                let website = editForm.website.trim().toLowerCase();
+                // Remove any existing protocol
+                website = website.replace(/^https?:\/\//i, '');
+                // Add www. if not present
+                if (!website.startsWith('www.')) {
+                    website = 'www.' + website;
+                }
+                // Add https://
+                website = 'https://' + website;
+                formData.append('website', website);
+            }
             formData.append('is_active', String(editForm.is_active));
             // Manager name
             if (manager.first_name) formData.append('manager_first_name', manager.first_name);
@@ -1042,9 +1068,57 @@ export default function CustomerDetailPage() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                         <div><label style={labelStyle}>Company Name</label><input type="text" value={editForm.company_name} onChange={(e) => setEditForm(f => ({ ...f, company_name: e.target.value }))} style={inputStyle} /></div>
-                        <div><label style={labelStyle}>Address</label><input type="text" value={editForm.address} onChange={(e) => setEditForm(f => ({ ...f, address: e.target.value }))} style={inputStyle} /></div>
+
+                        {/* Street Name with Icon */}
+                        <div>
+                            <label style={labelStyle}>🛣️ Street Name</label>
+                            <input
+                                type="text"
+                                value={editForm.street_name}
+                                onChange={(e) => setEditForm(f => ({ ...f, street_name: e.target.value }))}
+                                placeholder="Kerkstraat"
+                                style={inputStyle}
+                            />
+                        </div>
+
+                        {/* House Number and Addition Row */}
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <div style={{ flex: 1 }}>
+                                <label style={labelStyle}>🏠 House Nr.</label>
+                                <input
+                                    type="text"
+                                    value={editForm.house_number}
+                                    onChange={(e) => setEditForm(f => ({ ...f, house_number: e.target.value }))}
+                                    placeholder="123"
+                                    style={inputStyle}
+                                />
+                            </div>
+                            <div style={{ width: '100px' }}>
+                                <label style={labelStyle}>➕ Add.</label>
+                                <input
+                                    type="text"
+                                    value={editForm.house_number_addition}
+                                    onChange={(e) => setEditForm(f => ({ ...f, house_number_addition: e.target.value.toUpperCase() }))}
+                                    placeholder="A"
+                                    style={{ ...inputStyle, textTransform: 'uppercase' }}
+                                />
+                            </div>
+                        </div>
+
                         <div><label style={labelStyle}>City</label><input type="text" value={editForm.city} onChange={(e) => setEditForm(f => ({ ...f, city: e.target.value }))} style={inputStyle} /></div>
-                        <div><label style={labelStyle}>Postcode</label><input type="text" value={editForm.postcode} onChange={(e) => setEditForm(f => ({ ...f, postcode: e.target.value }))} style={inputStyle} /></div>
+                        <div><label style={labelStyle}>Postcode</label><input type="text" value={editForm.postcode} onChange={(e) => setEditForm(f => ({ ...f, postcode: e.target.value.toUpperCase() }))} style={{ ...inputStyle, textTransform: 'uppercase' }} /></div>
+
+                        {/* Website with Link Icon */}
+                        <div>
+                            <label style={labelStyle}>🔗 Website</label>
+                            <input
+                                type="url"
+                                value={editForm.website}
+                                onChange={(e) => setEditForm(f => ({ ...f, website: e.target.value }))}
+                                placeholder="https://www.example.com"
+                                style={inputStyle}
+                            />
+                        </div>
                     </div>
 
                     {/* Contact Information Section - integrated into Company Information */}
@@ -1470,8 +1544,8 @@ export default function CustomerDetailPage() {
                                                         type="number"
                                                         min="0"
                                                         step="1"
-                                                        value={percentage}
-                                                        onChange={(e) => updateServiceSurchargePercentage(st.id, parseFloat(e.target.value) || 0)}
+                                                        value={percentage === 0 ? '' : percentage}
+                                                        onChange={(e) => updateServiceSurchargePercentage(st.id, e.target.value === '' ? 0 : parseFloat(e.target.value))}
                                                         onClick={(e) => e.stopPropagation()}
                                                         style={{
                                                             width: '60px',
@@ -1696,8 +1770,8 @@ export default function CustomerDetailPage() {
                                                         type="number"
                                                         min="0"
                                                         step="1"
-                                                        value={percentage}
-                                                        onChange={(e) => updateAllowanceSurchargePercentage(st.id, parseFloat(e.target.value) || 0)}
+                                                        value={percentage === 0 ? '' : percentage}
+                                                        onChange={(e) => updateAllowanceSurchargePercentage(st.id, e.target.value === '' ? 0 : parseFloat(e.target.value))}
                                                         onClick={(e) => e.stopPropagation()}
                                                         style={{
                                                             width: '60px',

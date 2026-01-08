@@ -265,6 +265,34 @@ class _MyAssignedShiftsScreenState extends State<MyAssignedShiftsScreen> {
                       ],
                     ),
                   ),
+                  // WorkLog status badge
+                  if (shift.hasWorkLog) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: shift.latestWorkLogStatus == 'approved' 
+                            ? const Color(0xFF10B981)
+                            : shift.latestWorkLogStatus == 'pending' || shift.latestWorkLogStatus == 'submitted'
+                                ? const Color(0xFFF59E0B)
+                                : shift.latestWorkLogStatus == 'rejected'
+                                    ? const Color(0xFFEF4444)
+                                    : Colors.grey,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.assignment_turned_in, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${shift.workLogs.first.calculatedHours}h',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   if (isToday)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

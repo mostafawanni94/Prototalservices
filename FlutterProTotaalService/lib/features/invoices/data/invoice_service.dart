@@ -63,14 +63,14 @@ class WorkLogModel {
       status: json['status'] ?? 'draft',
       notes: json['notes'],
       rejectionReason: json['rejection_reason'],
-      billingWeekYear: json['billing_week_year'] ?? DateTime.now().year,
-      billingWeekNumber: json['billing_week_number'] ?? 1,
+      billingWeekYear: int.tryParse(json['billing_week_year']?.toString() ?? '') ?? DateTime.now().year,
+      billingWeekNumber: int.tryParse(json['billing_week_number']?.toString() ?? '') ?? 1,
       createdAt: DateTime.tryParse(json['created_at'] ?? '') ?? DateTime.now(),
     );
   }
 
   bool get isDone => status == 'approved';
-  bool get isPending => status == 'submitted';
+  bool get isPending => status == 'submitted' || status == 'pending';
   bool get needsEdit => status == 'rejected';
   bool get isDraft => status == 'draft';
   
@@ -193,15 +193,17 @@ class InvoiceService {
 
   InvoiceService({ApiClient? api}) : _api = api ?? ApiClient();
 
-  /// Get my work logs with optional filters
-  Future<List<WorkLogModel>> getMyWorkLogs({
+/// Get my work logs with optional filters and pagination
+  Future<({List<WorkLogModel> results, bool hasMore, int? nextPage})> getMyWorkLogs({
     int? weekYear,
     int? weekNumber,
     String? status,
     DateTime? startDate,
     DateTime? endDate,
+    int page = 1,
+    int pageSize = 10,
   }) async {
-    String endpoint = '/worklogs/?';
+    String endpoint = '/worklogs/?page=$page&page_size=$pageSize&';
     
     if (weekYear != null) endpoint += 'billing_week_year=$weekYear&';
     if (weekNumber != null) endpoint += 'billing_week_number=$weekNumber&';
@@ -210,8 +212,45 @@ class InvoiceService {
     if (endDate != null) endpoint += 'work_date__lte=${endDate.toIso8601String().split('T')[0]}&';
     
     final response = await _api.get(endpoint);
-    final results = response['results'] as List? ?? [];
-    return results.map((w) => WorkLogModel.fromJson(w)).toList();
+    final results = (response['results'] as List? ?? [])
+        .map((w) => WorkLogModel.fromJson(w))
+        .toList();
+    
+    // Check if there are more pages
+    final hasMore = response['next'] != null;
+    final nextPage = hasMore ? page + 1 : null;
+    
+    return (results: results, hasMore: hasMore, nextPage: nextPage);
+  }
+
+  /// Get all work logs (for backward compatibility, loads all pages)
+  Future<List<WorkLogModel>> getAllWorkLogs({
+    int? weekYear,
+    int? weekNumber,
+    String? status,
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    List<WorkLogModel> allLogs = [];
+    int page = 1;
+    bool hasMore = true;
+    
+    while (hasMore) {
+      final result = await getMyWorkLogs(
+        weekYear: weekYear,
+        weekNumber: weekNumber,
+        status: status,
+        startDate: startDate,
+        endDate: endDate,
+        page: page,
+        pageSize: 50,
+      );
+      allLogs.addAll(result.results);
+      hasMore = result.hasMore;
+      page++;
+    }
+    
+    return allLogs;
   }
 
   /// Get my invoices/earnings

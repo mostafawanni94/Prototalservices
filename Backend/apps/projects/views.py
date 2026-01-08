@@ -248,6 +248,7 @@ class ProjectPlannedDayViewSet(viewsets.ModelViewSet):
     ).prefetch_related('assignments__employee').order_by('date')
     serializer_class = ProjectPlannedDaySerializer
     permission_classes = [IsAdmin]
+    pagination_class = None  # Disable pagination - calendar needs all days
     
     def get_queryset(self):
         qs = super().get_queryset()
@@ -259,6 +260,10 @@ class ProjectPlannedDayViewSet(viewsets.ModelViewSet):
         template_id = self.request.query_params.get('shift_template')
         if template_id:
             qs = qs.filter(shift_template_id=template_id)
+        # Filter by year
+        year = self.request.query_params.get('year')
+        if year:
+            qs = qs.filter(date__year=int(year))
         # Filter by date range
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
@@ -401,6 +406,24 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
         assignment.cancel(reason)
         return Response(ShiftAssignmentSerializer(assignment).data)
     
+    def _get_supervisor_phone(self, supervisor):
+        """Get supervisor's phone number from contacts."""
+        if not supervisor:
+            return None
+        for contact in supervisor.contacts.all():
+            if contact.contact_type in ['phone', 'mobile']:
+                return contact.value
+        return None
+    
+    def _get_supervisor_email(self, supervisor):
+        """Get supervisor's email from contacts."""
+        if not supervisor:
+            return None
+        for contact in supervisor.contacts.all():
+            if contact.contact_type == 'email':
+                return contact.value
+        return None
+    
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def my(self, request):
         """Get current employee's shift assignments.
@@ -476,6 +499,16 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
             is_today = day.date == today
             is_past = day.date < today
             
+            # Get linked work logs (if any)
+            work_logs = []
+            for log in assignment.work_logs.all().order_by('-created_at')[:2]:
+                work_logs.append({
+                    'id': str(log.id),
+                    'status': log.status,
+                    'calculated_hours': str(log.calculated_hours),
+                    'work_date': log.work_date.isoformat() if log.work_date else None,
+                })
+            
             data.append({
                 'id': str(assignment.id),
                 'status': assignment.status,
@@ -487,13 +520,18 @@ class ShiftAssignmentViewSet(viewsets.ModelViewSet):
                 'project_id': str(project.id),
                 'project_name': project.name,
                 'project_location': project.location or '',
-                'project_address': project.address or '',
-                'project_city': project.city or '',
+                'project_address': project.location_address or '',
+                'project_city': project.location_city or '',
+                'project_description': project.description or '',
+                'customer_name': project.customer.company_name if project.customer else '',
                 'supervisor_name': day.supervisor.full_name if day.supervisor else None,
+                'supervisor_phone': self._get_supervisor_phone(day.supervisor) if day.supervisor else None,
+                'supervisor_email': self._get_supervisor_email(day.supervisor) if day.supervisor else None,
                 'notes': day.notes or '',
                 'is_today': is_today,
                 'is_past': is_past,
                 'can_edit': is_today and assignment.status == 'planned',
+                'work_logs': work_logs,
             })
         
         return Response({

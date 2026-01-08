@@ -1,8 +1,9 @@
 /// Work Log History Screen
 /// 
-/// Shows employee's work log history with earnings breakdown and status filters.
+/// Shows employee's work log history with weekly hours summary and day filtering.
 
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../../data/worklog_service.dart';
 import '../../../../core/widgets/app_widgets.dart';
 
@@ -19,13 +20,17 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
   
   List<WorkLogModel> _allLogs = [];
   bool _isLoading = true;
-  DateTime _dateFrom = DateTime.now().subtract(const Duration(days: 30));
-  DateTime _dateTo = DateTime.now();
+  
+  // Week selection
+  late DateTime _selectedWeekStart;
+  DateTime? _selectedDay; // null means show all days in the week
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    // Initialize to current week (Monday)
+    _selectedWeekStart = _getWeekStart(DateTime.now());
     _loadWorkLogs();
   }
 
@@ -33,6 +38,12 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  /// Get Monday of the week containing the given date
+  DateTime _getWeekStart(DateTime date) {
+    final weekday = date.weekday; // 1 = Monday, 7 = Sunday
+    return DateTime(date.year, date.month, date.day - (weekday - 1));
   }
 
   Future<void> _loadWorkLogs() async {
@@ -47,30 +58,92 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
     }
   }
 
-  List<WorkLogModel> _filterByStatus(String? status) {
+  /// Get logs for the selected week
+  List<WorkLogModel> _getWeekLogs() {
+    final weekEnd = _selectedWeekStart.add(const Duration(days: 7));
     return _allLogs.where((log) {
-      final inDateRange = log.date.isAfter(_dateFrom.subtract(const Duration(days: 1))) &&
-          log.date.isBefore(_dateTo.add(const Duration(days: 1)));
-      if (!inDateRange) return false;
+      return !log.date.isBefore(_selectedWeekStart) && log.date.isBefore(weekEnd);
+    }).toList();
+  }
+
+  /// Get logs for the selected day (or all if no day selected)
+  List<WorkLogModel> _filterByStatusAndDay(String? status) {
+    final weekLogs = _getWeekLogs();
+    
+    return weekLogs.where((log) {
+      // Filter by day if selected
+      if (_selectedDay != null) {
+        final isSameDay = log.date.year == _selectedDay!.year &&
+            log.date.month == _selectedDay!.month &&
+            log.date.day == _selectedDay!.day;
+        if (!isSameDay) return false;
+      }
+      // Filter by status
       if (status == null) return true;
       return log.status == status;
     }).toList();
   }
 
-  double _calculateTotalEarnings(List<WorkLogModel> logs, {bool approvedOnly = true}) {
-    return logs.where((l) => !approvedOnly || l.isApproved)
-        .fold(0.0, (sum, log) => sum + (log.earnings?.total ?? 0));
+  /// Calculate total hours for the week
+  double _calculateWeekTotalHours() {
+    return _getWeekLogs().fold(0.0, (sum, log) => sum + log.hoursWorked);
+  }
+
+  /// Calculate hours for a specific day
+  double _getHoursForDay(DateTime day) {
+    return _allLogs.where((log) {
+      return log.date.year == day.year &&
+          log.date.month == day.month &&
+          log.date.day == day.day;
+    }).fold(0.0, (sum, log) => sum + log.hoursWorked);
+  }
+
+  /// Check if a day has work logs
+  bool _dayHasLogs(DateTime day) {
+    return _allLogs.any((log) {
+      return log.date.year == day.year &&
+          log.date.month == day.month &&
+          log.date.day == day.day;
+    });
+  }
+
+  void _previousWeek() {
+    setState(() {
+      _selectedWeekStart = _selectedWeekStart.subtract(const Duration(days: 7));
+      _selectedDay = null;
+    });
+  }
+
+  void _nextWeek() {
+    setState(() {
+      _selectedWeekStart = _selectedWeekStart.add(const Duration(days: 7));
+      _selectedDay = null;
+    });
+  }
+
+  void _selectDay(DateTime day) {
+    setState(() {
+      if (_selectedDay != null && 
+          _selectedDay!.year == day.year && 
+          _selectedDay!.month == day.month && 
+          _selectedDay!.day == day.day) {
+        // Deselect if already selected
+        _selectedDay = null;
+      } else {
+        _selectedDay = day;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final allFiltered = _filterByStatus(null);
-    final approved = _filterByStatus('approved');
-    final pending = _filterByStatus('submitted');
-    final rejected = _filterByStatus('rejected');
+    final allFiltered = _filterByStatusAndDay(null);
+    final approved = _filterByStatusAndDay('approved');
+    final pending = _filterByStatusAndDay('submitted');
+    final rejected = _filterByStatusAndDay('rejected');
     
-    final totalEarnings = _calculateTotalEarnings(approved);
-    final pendingCount = pending.length;
+    final weekTotalHours = _calculateWeekTotalHours();
+    final weekNumber = _getIsoWeekNumber(_selectedWeekStart);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -78,12 +151,6 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
         title: const Text('Work History'),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        actions: [
-          IconButton(
-            onPressed: () => _showDateFilter(context),
-            icon: const Icon(Icons.date_range),
-          ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.white,
@@ -99,56 +166,15 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
       ),
       body: Column(
         children: [
-          // Summary Card
-          Container(
-            margin: const EdgeInsets.all(16),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [AppColors.primary, AppColors.primary.withOpacity(0.8)],
-              ),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Total Earnings', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                      const SizedBox(height: 4),
-                      Text(
-                        '€${totalEarnings.toStringAsFixed(2)}',
-                        style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-                      ),
-                      if (pendingCount > 0) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.amber,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            '$pendingCount pending',
-                            style: const TextStyle(color: Colors.black87, fontSize: 11, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.euro, color: Colors.white, size: 32),
-                ),
-              ],
-            ),
-          ),
+          // Week Selector & Hours Summary
+          _buildWeekSelector(weekNumber, weekTotalHours),
+          
+          // Day Selector
+          _buildDaySelector(),
+          
+          // Selected day info
+          if (_selectedDay != null)
+            _buildSelectedDayInfo(),
           
           // Logs List
           Expanded(
@@ -169,6 +195,222 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
     );
   }
 
+  /// Week selector with navigation and total hours
+  Widget _buildWeekSelector(int weekNumber, double totalHours) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Previous week button
+          Material(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _previousWeek,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.chevron_left, color: Colors.white, size: 24),
+              ),
+            ),
+          ),
+          
+          // Week info & total hours
+          Expanded(
+            child: Column(
+              children: [
+                Text(
+                  'Week $weekNumber, ${_selectedWeekStart.year}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '${totalHours.toStringAsFixed(1)} hours total',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Next week button
+          Material(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: _nextWeek,
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.chevron_right, color: Colors.white, size: 24),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Day selector row showing days of the week
+  Widget _buildDaySelector() {
+    final days = List.generate(7, (i) => _selectedWeekStart.add(Duration(days: i)));
+    final dayNames = ['MA', 'DI', 'WO', 'DO', 'VR', 'ZA', 'ZO'];
+    final today = DateTime.now();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      color: AppColors.primary.withOpacity(0.9),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: List.generate(7, (index) {
+          final day = days[index];
+          final isSelected = _selectedDay != null &&
+              _selectedDay!.year == day.year &&
+              _selectedDay!.month == day.month &&
+              _selectedDay!.day == day.day;
+          final isToday = day.year == today.year &&
+              day.month == today.month &&
+              day.day == today.day;
+          final hasLogs = _dayHasLogs(day);
+
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => _selectDay(day),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: isSelected 
+                      ? Colors.orange 
+                      : (isToday ? Colors.white.withOpacity(0.15) : Colors.transparent),
+                  borderRadius: BorderRadius.circular(12),
+                  border: isToday && !isSelected 
+                      ? Border.all(color: Colors.white.withOpacity(0.5), width: 1)
+                      : null,
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      dayNames[index],
+                      style: TextStyle(
+                        color: isSelected ? Colors.white : Colors.white70,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${day.day}',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: isSelected || isToday ? FontWeight.bold : FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    // Hours indicator dot
+                    if (hasLogs)
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: isSelected ? Colors.white : Colors.greenAccent,
+                          shape: BoxShape.circle,
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 6),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  /// Info bar showing selected day details
+  Widget _buildSelectedDayInfo() {
+    final hoursForDay = _getHoursForDay(_selectedDay!);
+    final dayName = DateFormat('EEEE d MMMM, yyyy', 'nl_NL').format(_selectedDay!);
+    final logsCount = _filterByStatusAndDay(null).length;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: Colors.orange.shade50,
+      child: Row(
+        children: [
+          Icon(Icons.calendar_today, color: Colors.orange.shade700, size: 18),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              dayName,
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade200,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${hoursForDay.toStringAsFixed(1)}h • $logsCount logs',
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: () => setState(() => _selectedDay = null),
+            child: Icon(Icons.close, color: Colors.orange.shade700, size: 20),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _getIsoWeekNumber(DateTime date) {
+    // ISO week number calculation
+    final jan1 = DateTime(date.year, 1, 1);
+    final jan1Weekday = jan1.weekday;
+    final firstThursday = jan1.add(Duration(days: (4 - jan1Weekday + 7) % 7));
+    final diff = date.difference(firstThursday).inDays;
+    return (diff / 7).floor() + 1;
+  }
+
   Widget _buildLogsList(List<WorkLogModel> logs) {
     if (logs.isEmpty) {
       return Center(
@@ -177,7 +419,12 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
           children: [
             Icon(Icons.work_outline, size: 64, color: Colors.grey.shade300),
             const SizedBox(height: 16),
-            Text('No work logs found', style: TextStyle(color: Colors.grey.shade500, fontSize: 16)),
+            Text(
+              _selectedDay != null 
+                  ? 'No work logs for this day'
+                  : 'No work logs this week',
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 16),
+            ),
           ],
         ),
       );
@@ -186,7 +433,7 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
     return RefreshIndicator(
       onRefresh: _loadWorkLogs,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         itemCount: logs.length,
         itemBuilder: (context, index) {
           final log = logs[index];
@@ -197,26 +444,29 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
   }
 
   Widget _buildLogCard(WorkLogModel log) {
-    final earnings = log.earnings?.total ?? 0;
-    
     Color statusColor;
     IconData statusIcon;
+    String statusText;
     switch (log.status) {
       case 'approved':
         statusColor = Colors.green;
         statusIcon = Icons.check_circle;
+        statusText = 'Approved';
         break;
       case 'submitted':
-        statusColor = Colors.amber;
+        statusColor = Colors.amber.shade700;
         statusIcon = Icons.pending;
+        statusText = 'pending';
         break;
       case 'rejected':
         statusColor = Colors.red;
         statusIcon = Icons.cancel;
+        statusText = 'Rejected';
         break;
       default:
         statusColor = Colors.grey;
         statusIcon = Icons.edit;
+        statusText = 'Draft';
     }
 
     return Container(
@@ -224,7 +474,14 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: statusColor.withOpacity(0.3)),
+        border: Border(left: BorderSide(color: statusColor, width: 4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -233,69 +490,66 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
           onTap: () => _showLogDetail(log),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Date
-                Container(
-                  width: 50,
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Column(
-                    children: [
-                      Text(
-                        log.date.day.toString(),
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary),
-                      ),
-                      Text(
-                        _monthName(log.date.month),
-                        style: const TextStyle(fontSize: 10, color: AppColors.primary),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                
-                // Info
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        log.locationCity.isNotEmpty ? log.locationCity : 'Unknown Location',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${log.startTime} - ${log.endTime} (${log.hoursWorked.toStringAsFixed(1)}h)',
-                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // Earnings / Status
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                // Header: Project name & Status
+                Row(
                   children: [
-                    if (log.isApproved)
-                      Text(
-                        '€${earnings.toStringAsFixed(2)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 16),
-                      )
-                    else
-                      Row(
+                    Expanded(
+                      child: Text(
+                        log.projectName ?? 'Work Log',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: statusColor.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(statusIcon, size: 16, color: statusColor),
+                          Icon(statusIcon, size: 14, color: statusColor),
                           const SizedBox(width: 4),
                           Text(
-                            log.status.toUpperCase(),
-                            style: TextStyle(color: statusColor, fontWeight: FontWeight.w600, fontSize: 12),
+                            statusText,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                
+                // Customer name
+                Text(
+                  log.customerName ?? '',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                
+                // Time info row
+                Row(
+                  children: [
+                    // Date
+                    _infoChip(Icons.calendar_today, DateFormat('EEE, d/M').format(log.date)),
+                    const SizedBox(width: 12),
+                    // Time
+                    _infoChip(Icons.access_time, '${log.startTime} - ${log.endTime}'),
+                    const SizedBox(width: 12),
+                    // Hours
+                    _infoChip(Icons.timelapse, '${log.hoursWorked.toStringAsFixed(1)}h'),
                   ],
                 ),
               ],
@@ -306,25 +560,18 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
     );
   }
 
-  String _monthName(int month) {
-    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-    return months[month - 1];
-  }
-
-  void _showDateFilter(BuildContext context) {
-    showDateRangePicker(
-      context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(start: _dateFrom, end: _dateTo),
-    ).then((range) {
-      if (range != null) {
-        setState(() {
-          _dateFrom = range.start;
-          _dateTo = range.end;
-        });
-      }
-    });
+  Widget _infoChip(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: Colors.grey.shade500),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+        ),
+      ],
+    );
   }
 
   void _showLogDetail(WorkLogModel log) {
@@ -333,16 +580,16 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+        height: MediaQuery.of(context).size.height * 0.75,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        padding: const EdgeInsets.all(24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
+            // Handle
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
               child: Container(
                 width: 40,
                 height: 4,
@@ -352,54 +599,169 @@ class _WorkLogHistoryScreenState extends State<WorkLogHistoryScreen> with Single
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            Text(
-              'Work Log Details',
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 24),
-            _detailRow('Date', '${log.date.day}/${log.date.month}/${log.date.year}'),
-            _detailRow('Location', '${log.locationAddress}, ${log.locationCity}'),
-            _detailRow('Time', '${log.startTime} - ${log.endTime}'),
-            _detailRow('Break', '${log.breakMinutes} minutes'),
-            _detailRow('Hours', '${log.hoursWorked.toStringAsFixed(2)} hours'),
-            _detailRow('Status', log.status.toUpperCase()),
-            if (log.earnings != null) ...[
-              _detailRow('Base Hours', '${log.earnings!.baseHours.toStringAsFixed(1)}h × €${log.earnings!.baseRate.toStringAsFixed(2)}'),
-              _detailRow('Base Pay', '€${log.earnings!.baseAmount.toStringAsFixed(2)}'),
-              if (log.earnings!.allowances.isNotEmpty) ...[
-                for (final a in log.earnings!.allowances)
-                  _detailRow(a.name, '€${a.amount.toStringAsFixed(2)} (${a.hours.toStringAsFixed(1)}h)'),
-              ],
-              _detailRow('Total', '€${log.earnings!.total.toStringAsFixed(2)}'),
-            ],
-            if (log.notes != null && log.notes!.isNotEmpty)
-              _detailRow('Notes', log.notes!),
-            if (log.rejectionReason != null && log.rejectionReason!.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Row(
+            
+            // Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.warning, color: Colors.red.shade700, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        log.rejectionReason!,
-                        style: TextStyle(color: Colors.red.shade700),
-                      ),
+                    // Header
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            log.projectName ?? 'Work Log Details',
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        _statusBadge(log.status),
+                      ],
                     ),
+                    if (log.customerName != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        log.customerName!,
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+                      ),
+                    ],
+                    
+                    const SizedBox(height: 24),
+                    
+                    // Date & Time Section
+                    _sectionTitle('Date & Time'),
+                    _detailRow('Date', DateFormat('EEEE, d MMMM yyyy').format(log.date)),
+                    _detailRow('Time', '${log.startTime} - ${log.endTime}'),
+                    _detailRow('Break', '${log.breakMinutes} minutes'),
+                    _detailRow('Total Hours', '${log.hoursWorked.toStringAsFixed(2)} hours'),
+                    
+                    const SizedBox(height: 20),
+                    
+                    // Location Section
+                    _sectionTitle('Location'),
+                    if (log.locationAddress.isNotEmpty)
+                      _detailRow('Address', log.locationAddress),
+                    if (log.locationCity.isNotEmpty)
+                      _detailRow('City', log.locationCity),
+                    
+                    // Supervisor Section
+                    if (log.supervisorName != null && log.supervisorName!.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      _sectionTitle('Supervisor'),
+                      _detailRow('Name', log.supervisorName!),
+                    ],
+                    
+                    // Notes
+                    if (log.notes != null && log.notes!.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      _sectionTitle('Notes'),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(log.notes!, style: const TextStyle(fontSize: 14)),
+                      ),
+                    ],
+                    
+                    // Rejection reason
+                    if (log.rejectionReason != null && log.rejectionReason!.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(Icons.warning, color: Colors.red.shade700, size: 20),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Rejection Reason',
+                                    style: TextStyle(
+                                      color: Colors.red.shade900,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    log.rejectionReason!,
+                                    style: TextStyle(color: Colors.red.shade700),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-            ],
+            ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: AppColors.primary,
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _statusBadge(String status) {
+    Color color;
+    String text;
+    switch (status) {
+      case 'approved':
+        color = Colors.green;
+        text = 'Approved';
+        break;
+      case 'submitted':
+        color = Colors.amber.shade700;
+        text = 'Pending';
+        break;
+      case 'rejected':
+        color = Colors.red;
+        text = 'Rejected';
+        break;
+      default:
+        color = Colors.grey;
+        text = 'Draft';
+    }
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12),
       ),
     );
   }

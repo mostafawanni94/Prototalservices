@@ -144,6 +144,9 @@ export default function WorkLogsPage() {
     // Quick status change dropdown
     const [statusDropdownOpen, setStatusDropdownOpen] = useState<string | null>(null);
 
+    // Bulk selection
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
     async function handleStatusChange(logId: string, newStatus: string) {
         try {
             const response = await fetch(`${API_URL}/worklogs/${logId}/`, {
@@ -299,6 +302,71 @@ export default function WorkLogsPage() {
             await loadWorkLogs();
         } catch (err) {
             alert(err instanceof Error ? err.message : 'Failed to reject');
+        }
+    }
+
+    async function handleDelete(id: string) {
+        if (!confirm('Are you sure you want to delete this work log? This action cannot be undone.')) {
+            return;
+        }
+        try {
+            await api.deleteWorkLog(id);
+            await loadWorkLogs();
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Failed to delete');
+        }
+    }
+
+    // Bulk selection functions
+    const displayedLogs = filter === 'pending' ? pendingLogs : workLogs;
+
+    function toggleSelectAll() {
+        if (selectedIds.size === displayedLogs.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(displayedLogs.map(log => log.id)));
+        }
+    }
+
+    function toggleSelectOne(id: string) {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) {
+            newSet.delete(id);
+        } else {
+            newSet.add(id);
+        }
+        setSelectedIds(newSet);
+    }
+
+    async function handleBulkDelete() {
+        if (selectedIds.size === 0) return;
+        if (!confirm(`Are you sure you want to delete ${selectedIds.size} work log(s)? This action cannot be undone.`)) {
+            return;
+        }
+        try {
+            for (const id of selectedIds) {
+                await api.deleteWorkLog(id);
+            }
+            setSelectedIds(new Set());
+            await loadWorkLogs();
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Failed to delete some work logs');
+        }
+    }
+
+    async function handleBulkApprove() {
+        if (selectedIds.size === 0) return;
+        if (!confirm(`Are you sure you want to approve ${selectedIds.size} work log(s)?`)) {
+            return;
+        }
+        try {
+            for (const id of selectedIds) {
+                await api.approveWorkLog(id);
+            }
+            setSelectedIds(new Set());
+            await loadWorkLogs();
+        } catch (err) {
+            alert(err instanceof Error ? err.message : 'Failed to approve some work logs');
         }
     }
 
@@ -1156,6 +1224,84 @@ export default function WorkLogsPage() {
                     )}
                 </div>
 
+                {/* Bulk Actions Bar */}
+                {selectedIds.size > 0 && (
+                    <div style={{
+                        backgroundColor: '#1E3A5F',
+                        borderRadius: '12px',
+                        padding: '16px 24px',
+                        marginBottom: '16px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <input
+                                type="checkbox"
+                                checked={selectedIds.size === displayedLogs.length}
+                                onChange={toggleSelectAll}
+                                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                            />
+                            <span style={{ color: 'white', fontWeight: 600, fontSize: '14px' }}>
+                                {selectedIds.size} item{selectedIds.size > 1 ? 's' : ''} selected
+                            </span>
+                            <button
+                                onClick={() => setSelectedIds(new Set())}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#94A3B8',
+                                    fontSize: '14px',
+                                    cursor: 'pointer',
+                                    textDecoration: 'underline',
+                                }}
+                            >
+                                Clear selection
+                            </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px' }}>
+                            <button
+                                onClick={handleBulkApprove}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '10px 20px',
+                                    backgroundColor: '#10B981',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <Check size={16} />
+                                Approve All
+                            </button>
+                            <button
+                                onClick={handleBulkDelete}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    padding: '10px 20px',
+                                    backgroundColor: '#EF4444',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    fontSize: '14px',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                <Trash2 size={16} />
+                                Delete All
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {/* Work Logs Table */}
                 <div style={{
                     backgroundColor: 'white',
@@ -1172,6 +1318,14 @@ export default function WorkLogsPage() {
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                 <thead style={{ backgroundColor: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
                                     <tr>
+                                        <th style={{ padding: '16px 12px', width: '50px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedIds.size > 0 && selectedIds.size === displayedLogs.length}
+                                                onChange={toggleSelectAll}
+                                                style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                            />
+                                        </th>
                                         <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>Employee</th>
                                         <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>Project</th>
                                         <th style={{ padding: '16px 24px', textAlign: 'left', fontSize: '12px', fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>Date</th>
@@ -1185,7 +1339,7 @@ export default function WorkLogsPage() {
                                 <tbody>
                                     {filteredLogs.length === 0 ? (
                                         <tr>
-                                            <td colSpan={8} style={{ padding: '48px 24px', textAlign: 'center', color: '#6B7280' }}>
+                                            <td colSpan={9} style={{ padding: '48px 24px', textAlign: 'center', color: '#6B7280' }}>
                                                 <Clock style={{ width: '48px', height: '48px', color: '#D1D5DB', margin: '0 auto 16px' }} />
                                                 <p style={{ fontSize: '16px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
                                                     {filter === 'pending' ? 'No pending work logs' : 'No work logs found'}
@@ -1198,6 +1352,14 @@ export default function WorkLogsPage() {
                                     ) : (
                                         filteredLogs.map((log) => (
                                             <tr key={log.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                                <td style={{ padding: '16px 12px', width: '50px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(log.id)}
+                                                        onChange={() => toggleSelectOne(log.id)}
+                                                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                                                    />
+                                                </td>
                                                 <td style={{ padding: '16px 24px' }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                                         <div style={{
@@ -1217,7 +1379,26 @@ export default function WorkLogsPage() {
                                                         <span style={{ fontWeight: 600, color: '#111827' }}>{log.employee_name}</span>
                                                     </div>
                                                 </td>
-                                                <td style={{ padding: '16px 24px', color: '#6B7280' }}>{log.project_name}</td>
+                                                <td style={{ padding: '16px 24px', color: '#6B7280' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                        <span>{log.project_name}</span>
+                                                        {log.shift_assignment_info && (
+                                                            <span style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                padding: '3px 8px',
+                                                                backgroundColor: log.shift_assignment_info.shift_color || '#3B82F6',
+                                                                color: 'white',
+                                                                borderRadius: '4px',
+                                                                fontSize: '10px',
+                                                                fontWeight: 600,
+                                                            }}>
+                                                                📅 {log.shift_assignment_info.shift_name}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
                                                 <td style={{ padding: '16px 24px', color: '#6B7280' }}>{log.work_date}</td>
                                                 <td style={{ padding: '16px 24px', color: '#6B7280' }}>{log.start_time} - {log.end_time}</td>
                                                 <td style={{ padding: '16px 24px', fontWeight: 600, color: '#111827' }}>{log.calculated_hours}h</td>
@@ -1309,49 +1490,49 @@ export default function WorkLogsPage() {
                                                                 Edit
                                                             </button>
                                                         )}
-                                                        {/* Approve/Reject buttons for pending status */}
-                                                        {log.status === 'pending' && (
-                                                            <>
-                                                                <button
-                                                                    onClick={() => handleApprove(log.id)}
-                                                                    style={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: '6px',
-                                                                        padding: '8px 14px',
-                                                                        fontSize: '13px',
-                                                                        fontWeight: 500,
-                                                                        color: 'white',
-                                                                        backgroundColor: '#16A34A',
-                                                                        border: 'none',
-                                                                        borderRadius: '8px',
-                                                                        cursor: 'pointer',
-                                                                    }}
-                                                                >
-                                                                    <Check style={{ width: '14px', height: '14px' }} />
-                                                                    Approve
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleReject(log.id)}
-                                                                    style={{
-                                                                        display: 'flex',
-                                                                        alignItems: 'center',
-                                                                        gap: '6px',
-                                                                        padding: '8px 14px',
-                                                                        fontSize: '13px',
-                                                                        fontWeight: 500,
-                                                                        color: '#DC2626',
-                                                                        backgroundColor: 'white',
-                                                                        border: '1px solid #FECACA',
-                                                                        borderRadius: '8px',
-                                                                        cursor: 'pointer',
-                                                                    }}
-                                                                >
-                                                                    <X style={{ width: '14px', height: '14px' }} />
-                                                                    Reject
-                                                                </button>
-                                                            </>
+                                                        {/* View button for approved/rejected status */}
+                                                        {(log.status === 'approved' || log.status === 'rejected') && (
+                                                            <button
+                                                                onClick={() => router.push(`/dashboard/worklogs/${log.id}`)}
+                                                                style={{
+                                                                    display: 'flex',
+                                                                    alignItems: 'center',
+                                                                    gap: '6px',
+                                                                    padding: '8px 14px',
+                                                                    fontSize: '13px',
+                                                                    fontWeight: 500,
+                                                                    color: '#1E3A5F',
+                                                                    backgroundColor: 'white',
+                                                                    border: '1px solid #E5E7EB',
+                                                                    borderRadius: '8px',
+                                                                    cursor: 'pointer',
+                                                                }}
+                                                            >
+                                                                <Eye style={{ width: '14px', height: '14px' }} />
+                                                                View
+                                                            </button>
                                                         )}
+
+                                                        {/* Delete button for all statuses */}
+                                                        <button
+                                                            onClick={() => handleDelete(log.id)}
+                                                            style={{
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                padding: '8px 14px',
+                                                                fontSize: '13px',
+                                                                fontWeight: 500,
+                                                                color: '#DC2626',
+                                                                backgroundColor: 'white',
+                                                                border: '1px solid #FECACA',
+                                                                borderRadius: '8px',
+                                                                cursor: 'pointer',
+                                                            }}
+                                                        >
+                                                            <Trash2 style={{ width: '14px', height: '14px' }} />
+                                                            Delete
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>
