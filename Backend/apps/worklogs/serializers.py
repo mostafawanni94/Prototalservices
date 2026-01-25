@@ -1,10 +1,77 @@
 """WorkEntry Serializers - Unified Work Entry System."""
 
 from decimal import Decimal
+from datetime import datetime
 from rest_framework import serializers
+from django.conf import settings
+from zoneinfo import ZoneInfo
 from apps.employees.models import EmployeeProfile
 from apps.customers.models import Outfolder
 from .models import Shift, WorkEntry
+
+
+class LocalDateTimeField(serializers.DateTimeField):
+    """
+    Custom DateTimeField that treats naive datetimes as Amsterdam local time
+    and ensures proper round-trip without unwanted UTC conversion.
+    """
+    def to_internal_value(self, value):
+        """Parse incoming datetime string as Amsterdam local time."""
+        if not value:
+            return None
+        
+        amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+        
+        # Parse the datetime string
+        if isinstance(value, str):
+            # Remove timezone suffix if present (we'll handle it ourselves)
+            if '+' in value:
+                value = value.split('+')[0]
+            if value.endswith('Z'):
+                value = value[:-1]
+            
+            # Try common formats
+            formats = [
+                '%Y-%m-%dT%H:%M:%S',
+                '%Y-%m-%dT%H:%M',
+                '%Y-%m-%d %H:%M:%S',
+                '%Y-%m-%d %H:%M',
+            ]
+            
+            for fmt in formats:
+                try:
+                    dt = datetime.strptime(value, fmt)
+                    # Attach Amsterdam timezone - this is the key!
+                    # The datetime is interpreted as Amsterdam local time
+                    return dt.replace(tzinfo=amsterdam_tz)
+                except ValueError:
+                    continue
+            
+            raise serializers.ValidationError(f'Invalid datetime format: {value}')
+        
+        # If already a datetime object
+        if isinstance(value, datetime):
+            if value.tzinfo is None:
+                return value.replace(tzinfo=amsterdam_tz)
+            return value
+        
+        return super().to_internal_value(value)
+    
+    def to_representation(self, value):
+        """Return datetime in local time without timezone suffix."""
+        if not value:
+            return None
+        
+        amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+        
+        if value.tzinfo is not None:
+            # Convert to Amsterdam time
+            local_dt = value.astimezone(amsterdam_tz)
+        else:
+            local_dt = value
+        
+        # Return as ISO string WITHOUT timezone suffix
+        return local_dt.strftime('%Y-%m-%dT%H:%M:%S')
 
 
 # =============================================================================
@@ -107,6 +174,11 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
     start_time = serializers.SerializerMethodField()
     end_time = serializers.SerializerMethodField()
     
+    # Override datetime fields to return local time without timezone offset
+    # This prevents the frontend from converting and losing hours
+    actual_start_datetime = serializers.SerializerMethodField()
+    actual_end_datetime = serializers.SerializerMethodField()
+    
     # Computed fields
     calculated_hours = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
     display_time_range = serializers.CharField(read_only=True)
@@ -153,6 +225,8 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
             'calculated_price', 'service_rate', 'surcharges_applied',
             # Invoice-compatible
             'surcharges_breakdown', 'hours_breakdown', 'break_duration', 'breaks',
+            # Allowances (Toeslag)
+            'allowances',
             # Notes
             'notes',
             # Timestamps
@@ -198,19 +272,63 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
         return ''
     
     def get_start_time(self, obj):
-        """Legacy-compatible: Return start time as HH:MM string."""
+        """Legacy-compatible: Return start time as HH:MM string in local time."""
         if obj.actual_start_datetime:
-            return obj.actual_start_datetime.strftime('%H:%M')
+            from zoneinfo import ZoneInfo
+            amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+            local_dt = obj.actual_start_datetime.astimezone(amsterdam_tz) if obj.actual_start_datetime.tzinfo else obj.actual_start_datetime
+            return local_dt.strftime('%H:%M')
         if obj.planned_start_time:
             return obj.planned_start_time.strftime('%H:%M')
         return None
     
     def get_end_time(self, obj):
-        """Legacy-compatible: Return end time as HH:MM string."""
+        """Legacy-compatible: Return end time as HH:MM string in local time."""
         if obj.actual_end_datetime:
-            return obj.actual_end_datetime.strftime('%H:%M')
+            from zoneinfo import ZoneInfo
+            amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+            local_dt = obj.actual_end_datetime.astimezone(amsterdam_tz) if obj.actual_end_datetime.tzinfo else obj.actual_end_datetime
+            return local_dt.strftime('%H:%M')
         if obj.planned_end_time:
             return obj.planned_end_time.strftime('%H:%M')
+        return None
+    
+    def get_actual_start_datetime(self, obj):
+        """Return actual_start_datetime in local time without timezone suffix.
+        This prevents the frontend from doing any timezone conversion."""
+        if obj.actual_start_datetime:
+            from django.utils import timezone
+            from zoneinfo import ZoneInfo
+            
+            dt = obj.actual_start_datetime
+            # Convert to Amsterdam local time if it's in UTC
+            amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+            if dt.tzinfo is not None:
+                local_dt = dt.astimezone(amsterdam_tz)
+            else:
+                local_dt = dt
+            
+            # Return as ISO string WITHOUT timezone suffix (e.g., "2026-01-20T20:00:00")
+            return local_dt.strftime('%Y-%m-%dT%H:%M:%S')
+        return None
+    
+    def get_actual_end_datetime(self, obj):
+        """Return actual_end_datetime in local time without timezone suffix.
+        This prevents the frontend from doing any timezone conversion."""
+        if obj.actual_end_datetime:
+            from django.utils import timezone
+            from zoneinfo import ZoneInfo
+            
+            dt = obj.actual_end_datetime
+            # Convert to Amsterdam local time if it's in UTC
+            amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+            if dt.tzinfo is not None:
+                local_dt = dt.astimezone(amsterdam_tz)
+            else:
+                local_dt = dt
+            
+            # Return as ISO string WITHOUT timezone suffix (e.g., "2026-01-21T04:30:00")
+            return local_dt.strftime('%Y-%m-%dT%H:%M:%S')
         return None
     
     def get_service_rate(self, obj):
@@ -325,17 +443,19 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
         allow_null=True,
         write_only=True
     )
-    start_datetime = serializers.DateTimeField(
+    start_datetime = LocalDateTimeField(
         source='actual_start_datetime',
         required=False,
         allow_null=True,
         write_only=True
     )
-    end_datetime = serializers.DateTimeField(
+    end_datetime = LocalDateTimeField(
         source='actual_end_datetime',
         required=False,
         allow_null=True,
-        write_only=True
+        write_only=True,
+        input_formats=['%Y-%m-%dT%H:%M', '%Y-%m-%dT%H:%M:%S', 'iso-8601'],
+        default_timezone=None  # This makes it use settings.TIME_ZONE for naive datetimes
     )
     # Break time fields for frontend (converted to breaks JSON array)
     break_start_time = serializers.TimeField(required=False, allow_null=True, write_only=True)
@@ -349,6 +469,7 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
             'planned_start_time', 'planned_end_time', 'planned_supervisor',
             'actual_start_datetime', 'actual_end_datetime',
             'breaks', 'break_duration_minutes',
+            'allowances',  # Added to store Toeslag data
             'service', 'location_override',
             'notes',
             # Aliases for frontend
@@ -367,9 +488,10 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
         }
     
     def validate(self, data):
-        # If actual times provided, end must be after start
+        # Validate that end time is after start time if both are provided
         start = data.get('actual_start_datetime')
         end = data.get('actual_end_datetime')
+        
         if start and end and end <= start:
             raise serializers.ValidationError({
                 'actual_end_datetime': 'End time must be after start time'
@@ -382,6 +504,7 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
             data['breaks'] = [{'start': str(break_start), 'end': str(break_end)}]
         
         return data
+
     
     def create(self, validated_data):
         # Set created_by from request user

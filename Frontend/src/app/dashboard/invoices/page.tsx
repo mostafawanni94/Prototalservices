@@ -4,8 +4,9 @@ import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard';
 import { Card, Button, Input } from '@/components/ui';
 import { api, Invoice } from '@/lib/api';
-import { FileText, Download, Eye, Clock, CheckCircle, AlertCircle, DollarSign, X, Gift, Coins, Users, Briefcase } from 'lucide-react';
+import { FileText, Download, Eye, Clock, CheckCircle, AlertCircle, DollarSign, X, Gift, Coins, Users, User, Briefcase } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 
@@ -226,54 +227,70 @@ export default function InvoicesPage() {
     }
 
     // Excel Export - Full Version (for Customer)
-    function exportExcelForCustomer() {
+    // Uses backend endpoint that loads Master.xlsx template for exact design match
+    async function exportExcelForCustomer(exportType: 'hr' | 'finance' = 'hr') {
+        if (!selectedCustomer) {
+            alert('Please select a customer first.');
+            return;
+        }
         if (worklogs.length === 0) {
-            alert('No worklogs to export. Please select filters first.');
+            alert('No worklogs to export. Please adjust your filters.');
             return;
         }
 
-        const customerName = customers.find(c => c.id === selectedCustomer)?.company_name || 'All Customers';
-        const weekInfo = weekStart ? `Week ${weekStart}` : 'All Weeks';
+        try {
+            // Build query parameters
+            const params = new URLSearchParams();
+            params.append('customer_id', selectedCustomer);
+            params.append('export_type', exportType);
 
-        // Prepare data
-        const excelData = worklogs.map(log => ({
-            'Medewerker naam': log.employee_name || '',
-            'Project': log.project_name || '',
-            'Functie': log.service_name || '',
-            'Dag': new Date(log.work_date).toLocaleDateString('nl-NL', { weekday: 'short' }),
-            'Datum': log.work_date,
-            'Begin': log.start_time || '',
-            'Einde': log.end_time || '',
-            'Pauze': log.break_duration || '0:00',
-            'Normaal Uren': log.hours_breakdown?.normal_hours || log.calculated_hours || 0,
-            'Nacht Uren': log.hours_breakdown?.night_hours || 0,
-            'Zaterdag 100%': log.hours_breakdown?.saturday_hours || 0,
-            'Zondag 200%': log.hours_breakdown?.sunday_hours || 0,
-            'Slaap Uren': log.sleep_hours || 0,
-            'Toeslagen': log.allowances?.map((a: any) => `${a.name || a.type}: ${a.hours}h`).join(', ') || '',
-            'TOTAAL UREN': log.calculated_hours || 0,
-            'Status': log.status || ''
-        }));
+            if (weekStart) params.append('week_start', weekStart);
+            if (weekEnd) params.append('week_end', weekEnd);
+            if (selectedSupervisor) params.append('supervisor_id', selectedSupervisor);
+            if (selectedEmployees.length > 0) {
+                params.append('employee_ids', selectedEmployees.join(','));
+            }
 
-        // Create worksheet
-        const ws = XLSX.utils.json_to_sheet(excelData);
 
-        // Set column widths
-        ws['!cols'] = [
-            { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 8 }, { wch: 12 },
-            { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 10 },
-            { wch: 12 }, { wch: 12 }, { wch: 10 }, { wch: 30 }, { wch: 12 }, { wch: 10 }
-        ];
+            // Call the backend export endpoint
+            const response = await fetch(`${API_URL}/worklogs/export/customer/?${params.toString()}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+            });
 
-        // Create workbook
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Urenregistratie');
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Export failed');
+            }
 
-        // Download
-        const filename = `Invoice_${customerName.replace(/\s+/g, '_')}_${weekInfo.replace(/\s+/g, '_')}.xlsx`;
-        XLSX.writeFile(wb, filename);
-        setShowExportModal(false);
+            // Download the file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+
+            // Extract filename from Content-Disposition header if available
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = `Inleenovereenkomst_${new Date().toISOString().split('T')[0]}.xlsx`;
+            if (contentDisposition) {
+                const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                if (filenameMatch) {
+                    filename = filenameMatch[1];
+                }
+            }
+
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            setShowExportModal(false);
+        } catch (error) {
+            console.error('Export failed:', error);
+            alert('Failed to export Excel file. Please try again.');
+        }
     }
+
 
     // Excel Export - Simple Version (for Employee)
     function exportExcelForEmployee() {
@@ -1799,9 +1816,47 @@ export default function InvoicesPage() {
                         </p>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                            {/* Export for Customer */}
+                            {/* Export for HR */}
                             <button
-                                onClick={exportExcelForCustomer}
+                                onClick={() => exportExcelForCustomer('hr')}
+                                disabled={worklogs.length === 0 || loadingWorklogs}
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '16px',
+                                    padding: '20px',
+                                    backgroundColor: worklogs.length > 0 ? '#16A34A' : '#E5E7EB',
+                                    border: 'none',
+                                    borderRadius: '14px',
+                                    cursor: worklogs.length > 0 ? 'pointer' : 'not-allowed',
+                                    transition: 'all 0.2s',
+                                    textAlign: 'left',
+                                }}
+                            >
+                                <div style={{
+                                    width: '48px',
+                                    height: '48px',
+                                    borderRadius: '12px',
+                                    backgroundColor: 'rgba(255,255,255,0.15)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}>
+                                    <Users size={24} style={{ color: 'white' }} />
+                                </div>
+                                <div>
+                                    <p style={{ color: 'white', fontWeight: 600, fontSize: '16px', margin: 0 }}>
+                                        Export for HR
+                                    </p>
+                                    <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px', margin: '4px 0 0 0' }}>
+                                        Hours overview with TOTAAL UREN (A-P)
+                                    </p>
+                                </div>
+                            </button>
+
+                            {/* Export for Finance */}
+                            <button
+                                onClick={() => exportExcelForCustomer('finance')}
                                 disabled={worklogs.length === 0 || loadingWorklogs}
                                 style={{
                                     display: 'flex',
@@ -1829,10 +1884,10 @@ export default function InvoicesPage() {
                                 </div>
                                 <div>
                                     <p style={{ color: 'white', fontWeight: 600, fontSize: '16px', margin: 0 }}>
-                                        Export for Customer (Full)
+                                        Export for Finance
                                     </p>
                                     <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px', margin: '4px 0 0 0' }}>
-                                        Include all hours, surcharges, allowances, and totals
+                                        Full report with surcharges and TOTAAL BEDRAG (A-O, Q-X)
                                     </p>
                                 </div>
                             </button>
@@ -1863,7 +1918,7 @@ export default function InvoicesPage() {
                                     alignItems: 'center',
                                     justifyContent: 'center',
                                 }}>
-                                    <Users size={24} style={{ color: '#3B82F6' }} />
+                                    <User size={24} style={{ color: '#3B82F6' }} />
                                 </div>
                                 <div>
                                     <p style={{ color: '#1F2937', fontWeight: 600, fontSize: '16px', margin: 0 }}>
@@ -1875,6 +1930,7 @@ export default function InvoicesPage() {
                                 </div>
                             </button>
                         </div>
+
                     </div>
                 </div>
             )}

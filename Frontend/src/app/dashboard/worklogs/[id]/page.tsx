@@ -186,19 +186,19 @@ export default function WorkLogEditPage() {
             const data = await response.json();
             setWorklog(data);
 
-            // Parse datetime fields - support both new and legacy formats
+            // Parse datetime fields - use actual_start_datetime and actual_end_datetime from API
             let startDt = '';
             let endDt = '';
 
-            // Try new datetime fields first
-            if (data.start_datetime) {
-                startDt = data.start_datetime.substring(0, 16);  // YYYY-MM-DDTHH:mm
+            // Use actual datetime fields from API
+            if (data.actual_start_datetime) {
+                startDt = data.actual_start_datetime.substring(0, 16);  // YYYY-MM-DDTHH:mm
             } else if (data.work_date && data.start_time) {
                 startDt = `${data.work_date}T${data.start_time.substring(0, 5)}`;
             }
 
-            if (data.end_datetime) {
-                endDt = data.end_datetime.substring(0, 16);
+            if (data.actual_end_datetime) {
+                endDt = data.actual_end_datetime.substring(0, 16);
             } else if (data.work_date && data.end_time) {
                 endDt = `${data.work_date}T${data.end_time.substring(0, 5)}`;
             }

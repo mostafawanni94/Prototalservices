@@ -734,10 +734,23 @@ export default function EmployeeDetailPage() {
                 { method: 'PATCH', headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }, body: formData }
             );
             if (!response.ok) throw new Error('Upload failed');
-            await loadEmployee();
+
+            // Get the updated employee data
+            const updatedEmployee = await response.json();
+
+            // Update employee state with new data (for file URLs)
+            setEmployee(updatedEmployee);
+
+            // IMPORTANT: Don't reset editForm - preserve user's unsaved changes
+            // Only update the file URL field in editForm if it exists
+            const urlField = `${fieldName}_url`;
+            if (urlField in updatedEmployee) {
+                setEditForm(prev => ({ ...prev, [urlField]: updatedEmployee[urlField] }));
+            }
         } catch (err) { alert(err instanceof Error ? err.message : 'Upload failed'); }
         finally { setUploadingFile(null); }
     }
+
 
     async function handleDeleteFile(fieldName: string) {
         if (!employee || !confirm('Delete this file?')) return;

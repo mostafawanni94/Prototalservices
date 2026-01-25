@@ -67,6 +67,8 @@ export default function NewCustomerPage() {
     const [customerContacts, setCustomerContacts] = useState<Contact[]>([
         { contact_type: 'phone', value: '', label: '', is_primary: true },
     ]);
+    const [hrEmail, setHrEmail] = useState<string>('');  // HR email with label 'hr'
+
 
     // General Manager
     const [manager, setManager] = useState<Manager>({
@@ -526,6 +528,23 @@ export default function NewCustomerPage() {
                 }
             }
 
+            // Add HR email if provided
+            if (hrEmail.trim()) {
+                await fetch(`${API_URL}/customers/customers/${createdCustomer.id}/add_contact/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                    },
+                    body: JSON.stringify({
+                        contact_type: 'email',
+                        value: hrEmail.trim(),
+                        label: 'hr',
+                        is_primary: false,
+                    }),
+                });
+            }
+
             // Create the supervisors (outfolders)
             for (const supervisor of supervisors) {
                 const outfolderResponse = await fetch(`${API_URL}/customers/outfolders/`, {
@@ -912,8 +931,25 @@ export default function NewCustomerPage() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* HR Email - Special field */}
+                        <div style={{ marginTop: '16px', padding: '16px', backgroundColor: '#F0FDF4', borderRadius: '12px', border: '1px solid #86EFAC' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <Mail style={{ width: '16px', height: '16px', color: '#16A34A' }} />
+                                <label style={{ ...labelStyle, marginBottom: 0, color: '#16A34A' }}>HR Email (for Reports)</label>
+                            </div>
+                            <input
+                                type="email"
+                                value={hrEmail}
+                                onChange={(e) => setHrEmail(e.target.value)}
+                                placeholder="hr@company.com"
+                                style={{ ...inputStyle, backgroundColor: 'white', borderColor: '#86EFAC' }}
+                            />
+                            <p style={{ fontSize: '11px', color: '#6B7280', margin: '6px 0 0' }}>This email will appear on HR export reports</p>
+                        </div>
                     </div>
                 </div>
+
 
                 {/* General Manager Card */}
                 <div style={{ backgroundColor: 'white', borderRadius: '16px', border: '1px solid #E5E7EB', padding: '24px', marginBottom: '24px' }}>

@@ -456,34 +456,58 @@ export default function WorkLogsPage() {
     }
 
     async function openEditModal(log: WorkEntry) {
-        // Populate form with existing worklog data
-        const employeeObj = employees.find(e => e.id === (log as any).employee);
+        // Fetch fresh data from API to ensure we have the latest values
+        let freshLog = log;
+        try {
+            const response = await fetch(`${API_URL}/worklogs/${log.id}/`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
+            });
+            if (response.ok) {
+                freshLog = await response.json();
+            }
+        } catch (err) {
+            console.error('Failed to fetch fresh worklog data:', err);
+            // Fall back to cached log data
+        }
+
+        // Populate form with fresh worklog data
+        const employeeObj = employees.find(e => e.id === (freshLog as any).employee);
 
         // Get customer from project (worklog doesn't store customer directly)
-        const projectId = (log as any).project || '';
+        const projectId = (freshLog as any).project || '';
         const projectObj = projects.find(p => p.id === projectId);
         const customerId = (projectObj as any)?.customer || '';
 
+        // Helper to convert ISO datetime string to datetime-local format (YYYY-MM-DDTHH:mm)
+        // Backend now returns local time without timezone suffix, so just slice to 16 chars
+        const toLocalDatetimeString = (isoString: string | null | undefined): string => {
+            if (!isoString) return new Date().toISOString().slice(0, 16);
+            // Backend returns "2026-01-20T20:00:00" (no timezone), just slice to get "2026-01-20T20:00"
+            return isoString.slice(0, 16);
+        };
+
         setFormData({
-            employee: (log as any).employee || '',
+            employee: (freshLog as any).employee || '',
             customer: customerId,
             project: projectId,
-            supervisor: (log as any).supervisor || '',
-            service: (log as any).service || '',
-            location_override: log.location || '',
-            start_datetime: log.actual_start_datetime?.slice(0, 16) ||
-                (log.work_date && log.planned_start_time ? `${log.work_date}T${log.planned_start_time.substring(0, 5)}` : new Date().toISOString().slice(0, 16)),
-            end_datetime: log.actual_end_datetime?.slice(0, 16) ||
-                (log.work_date && log.planned_end_time ? `${log.work_date}T${log.planned_end_time.substring(0, 5)}` : new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16)),
-            break_start_time: (log as any).break_start_time?.substring(0, 5) || '12:00',
-            break_end_time: (log as any).break_end_time?.substring(0, 5) || '12:30',
-            notes: (log as any).notes || '',
-            status: log.status || 'draft',
+            supervisor: (freshLog as any).supervisor || '',
+            service: (freshLog as any).service || '',
+            location_override: freshLog.location || '',
+            start_datetime: freshLog.actual_start_datetime
+                ? toLocalDatetimeString(freshLog.actual_start_datetime)
+                : (freshLog.work_date && freshLog.planned_start_time ? `${freshLog.work_date}T${freshLog.planned_start_time.substring(0, 5)}` : new Date().toISOString().slice(0, 16)),
+            end_datetime: freshLog.actual_end_datetime
+                ? toLocalDatetimeString(freshLog.actual_end_datetime)
+                : (freshLog.work_date && freshLog.planned_end_time ? `${freshLog.work_date}T${freshLog.planned_end_time.substring(0, 5)}` : new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16)),
+            break_start_time: (freshLog as any).break_start_time?.substring(0, 5) || '12:00',
+            break_end_time: (freshLog as any).break_end_time?.substring(0, 5) || '12:30',
+            notes: (freshLog as any).notes || '',
+            status: freshLog.status || 'draft',
         });
 
         // Map existing allowances with time fields
-        if ((log as any).allowances?.length > 0) {
-            setAllowances((log as any).allowances.map((a: any) => ({
+        if ((freshLog as any).allowances?.length > 0) {
+            setAllowances((freshLog as any).allowances.map((a: any) => ({
                 allowance_type: a.allowance_type,
                 custom_allowance_name: a.custom_allowance_name || '',
                 hours: String(a.hours || ''),
@@ -500,9 +524,9 @@ export default function WorkLogsPage() {
             await loadCustomerData(projectId);
         }
 
-        setEmployeeSearch(employeeObj?.full_name || log.employee_name || '');
+        setEmployeeSearch(employeeObj?.full_name || freshLog.employee_name || '');
         setShowEmployeeDropdown(false);
-        setEditingId(log.id);
+        setEditingId(freshLog.id);
         setShowModal(true);
     }
 
@@ -553,12 +577,13 @@ export default function WorkLogsPage() {
             // Extract work_date from start datetime (YYYY-MM-DD)
             const workDate = formData.start_datetime?.split('T')[0] || '';
 
+            // Send datetime exactly as entered - backend handles timezone via TIME_ZONE setting
             const payload: any = {
                 project: formData.project,
                 employee: formData.employee,
                 work_date: workDate,  // Required field
-                start_datetime: formData.start_datetime,
-                end_datetime: formData.end_datetime,
+                start_datetime: formData.start_datetime,  // e.g., "2026-01-20T20:00"
+                end_datetime: formData.end_datetime,      // e.g., "2026-01-21T04:30"
                 break_start_time: formData.break_start_time,
                 break_end_time: formData.break_end_time,
                 notes: formData.notes,

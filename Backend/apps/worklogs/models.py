@@ -433,6 +433,16 @@ class WorkEntry(BaseModel):
         help_text="Total break time in minutes"
     )
     
+    # Allowances (Toeslag) - JSON array of allowances
+    # Format: [{allowance_type: id, custom_allowance_name: str, hours: float, 
+    #           start_time: "HH:MM", end_time: "HH:MM", notes: str}, ...]
+    allowances = models.JSONField(
+        blank=True,
+        default=list,
+        verbose_name="Allowances",
+        help_text="Array of allowances [{allowance_type: id, hours: float, start_time: HH:MM, end_time: HH:MM}, ...]"
+    )
+    
     # Service type from customer
     service = models.ForeignKey(
         'customers.Service',
@@ -678,9 +688,13 @@ class WorkEntry(BaseModel):
     
     @property
     def display_time_range(self):
-        """Get display time range (actual if exists, otherwise planned)."""
+        """Get display time range (actual if exists, otherwise planned) in local time."""
         if self.actual_start_datetime and self.actual_end_datetime:
-            return f"{self.actual_start_datetime.strftime('%H:%M')} - {self.actual_end_datetime.strftime('%H:%M')}"
+            from zoneinfo import ZoneInfo
+            amsterdam_tz = ZoneInfo('Europe/Amsterdam')
+            start_local = self.actual_start_datetime.astimezone(amsterdam_tz) if self.actual_start_datetime.tzinfo else self.actual_start_datetime
+            end_local = self.actual_end_datetime.astimezone(amsterdam_tz) if self.actual_end_datetime.tzinfo else self.actual_end_datetime
+            return f"{start_local.strftime('%H:%M')} - {end_local.strftime('%H:%M')}"
         elif self.planned_start_time and self.planned_end_time:
             return f"{self.planned_start_time.strftime('%H:%M')} - {self.planned_end_time.strftime('%H:%M')}"
         return "-"

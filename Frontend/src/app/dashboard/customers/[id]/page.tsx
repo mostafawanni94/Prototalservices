@@ -96,6 +96,9 @@ export default function CustomerDetailPage() {
     // Customer contacts
     const [customerContacts, setCustomerContacts] = useState<Contact[]>([]);
     const [newCustomerContacts, setNewCustomerContacts] = useState<Contact[]>([]);
+    const [hrEmail, setHrEmail] = useState<string>('');  // HR email with label 'hr'
+    const [existingHrContactId, setExistingHrContactId] = useState<string | null>(null);
+
 
     // General Manager
     const [manager, setManager] = useState<Manager>({
@@ -361,22 +364,34 @@ export default function CustomerDetailPage() {
                 })));
             }
 
-            // Load customer contacts (company contacts - not manager)
+            // Load customer contacts (company contacts - not manager, not hr)
             if (data.contacts && Array.isArray(data.contacts)) {
-                const companyContacts = data.contacts.filter((c: Contact) => c.label !== 'manager');
+                const companyContacts = data.contacts.filter((c: Contact) => c.label !== 'manager' && c.label?.toLowerCase() !== 'hr');
                 const managerContacts = data.contacts.filter((c: Contact) => c.label === 'manager');
+                const hrContact = data.contacts.find((c: Contact) => c.label?.toLowerCase() === 'hr' && c.contact_type === 'email');
                 setCustomerContacts(companyContacts);
                 setManager({
                     first_name: data.manager_first_name || '',
                     last_name: data.manager_last_name || '',
                     contacts: managerContacts,
                 });
+                // Set HR email if found
+                if (hrContact) {
+                    setHrEmail(hrContact.value || '');
+                    setExistingHrContactId(hrContact.id || null);
+                } else {
+                    setHrEmail('');
+                    setExistingHrContactId(null);
+                }
             } else {
                 setCustomerContacts([]);
                 setManager({ first_name: data.manager_first_name || '', last_name: data.manager_last_name || '', contacts: [] });
+                setHrEmail('');
+                setExistingHrContactId(null);
             }
             setNewCustomerContacts([]);
             setNewManagerContacts([]);
+
 
             // Load outfolders
             if (data.outfolders && Array.isArray(data.outfolders)) {
@@ -931,6 +946,43 @@ export default function CustomerDetailPage() {
                 }
             }
 
+            // Save HR email (update or create)
+            if (hrEmail.trim()) {
+                if (existingHrContactId) {
+                    // Update existing HR contact
+                    await fetch(`${API_URL}/customers/contacts/${existingHrContactId}/`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        },
+                        body: JSON.stringify({ value: hrEmail.trim() }),
+                    });
+                } else {
+                    // Create new HR contact
+                    await fetch(`${API_URL}/customers/customers/${params.id}/add_contact/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+                        },
+                        body: JSON.stringify({
+                            contact_type: 'email',
+                            value: hrEmail.trim(),
+                            label: 'hr',
+                            is_primary: false,
+                        }),
+                    });
+                }
+            } else if (existingHrContactId) {
+                // Delete HR contact if email was cleared
+                await fetch(`${API_URL}/customers/contacts/${existingHrContactId}/`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` },
+                });
+            }
+
+
             setLogo(null);
             await loadCustomer();
             alert('Customer updated successfully!');
@@ -1195,7 +1247,24 @@ export default function CustomerDetailPage() {
                                 </div>
                             </div>
                         </div>
+
+                        {/* HR Email - Special field */}
+                        <div style={{ marginTop: '16px', padding: '16px', backgroundColor: '#F0FDF4', borderRadius: '12px', border: '1px solid #86EFAC' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                <Mail style={{ width: '16px', height: '16px', color: '#16A34A' }} />
+                                <label style={{ ...labelStyle, marginBottom: 0, color: '#16A34A' }}>HR Email (for Reports)</label>
+                            </div>
+                            <input
+                                type="email"
+                                value={hrEmail}
+                                onChange={(e) => setHrEmail(e.target.value)}
+                                placeholder="hr@company.com"
+                                style={{ ...inputStyle, backgroundColor: 'white', borderColor: '#86EFAC' }}
+                            />
+                            <p style={{ fontSize: '11px', color: '#6B7280', margin: '6px 0 0' }}>This email will appear on HR export reports</p>
+                        </div>
                     </div>
+
 
                     <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #E5E7EB' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
