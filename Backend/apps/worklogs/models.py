@@ -925,6 +925,7 @@ class WorkEntry(BaseModel):
             'night_hours': 0.0,
             'saturday_hours': 0.0,
             'sunday_hours': 0.0,
+            'weekend_hours': 0.0,  # Combined saturday + sunday for Excel export
             'holiday_hours': 0.0,
             'overtime_hours': 0.0,
             'surcharges': [],  # List of {'name', 'category', 'hours', 'percentage', 'amount'}
@@ -936,15 +937,17 @@ class WorkEntry(BaseModel):
         customer = self.project.customer
         rate = float(self.get_service_rate())
         
-        # Get work times (ensure naive datetimes for comparison)
+        # Get work times in Amsterdam local time
         if self.actual_start_datetime and self.actual_end_datetime:
             work_start = self.actual_start_datetime
             work_end = self.actual_end_datetime
-            # Convert to naive if timezone-aware
+            # Convert to Amsterdam local time first, then strip tzinfo for comparison
+            from zoneinfo import ZoneInfo
+            amsterdam_tz = ZoneInfo('Europe/Amsterdam')
             if hasattr(work_start, 'tzinfo') and work_start.tzinfo:
-                work_start = work_start.replace(tzinfo=None)
+                work_start = work_start.astimezone(amsterdam_tz).replace(tzinfo=None)
             if hasattr(work_end, 'tzinfo') and work_end.tzinfo:
-                work_end = work_end.replace(tzinfo=None)
+                work_end = work_end.astimezone(amsterdam_tz).replace(tzinfo=None)
         elif self.planned_start_time and self.planned_end_time and self.work_date:
             work_start = datetime.combine(self.work_date, self.planned_start_time)
             work_end = datetime.combine(self.work_date, self.planned_end_time)
@@ -957,7 +960,8 @@ class WorkEntry(BaseModel):
         break_minutes = self._get_total_break_minutes()
         net_work_minutes = total_work_minutes - break_minutes
         
-        # Check each surcharge type for overlap
+        # Build list of applicable surcharges with their conditions and percentages
+        applicable_surcharges = []
         for surcharge_type in SurchargeType.objects.filter(is_active=True):
             try:
                 customer_surcharge = CustomerServiceSurcharge.objects.get(
@@ -968,60 +972,177 @@ class WorkEntry(BaseModel):
             except CustomerServiceSurcharge.DoesNotExist:
                 continue
             
-            overlap_hours = 0.0
-            category = surcharge_type.category or 'other'
+            applicable_surcharges.append({
+                'surcharge_type': surcharge_type,
+                'percentage': float(customer_surcharge.percentage),
+                'name': surcharge_type.name,
+                'category': surcharge_type.category or 'other',
+            })
+        
+        # Analyze each minute of work to determine the highest applicable surcharge
+        # This ensures surcharges don't stack - only the highest applies per minute
+        surcharge_minutes = {}  # {surcharge_name: minutes}
+        normal_minutes = 0
+        
+        # Get breaks as list of (start, end) datetime tuples
+        break_periods = []
+        if self.breaks and isinstance(self.breaks, list):
+            for brk in self.breaks:
+                try:
+                    start_str = brk.get('start', '')
+                    end_str = brk.get('end', '')
+                    if start_str and end_str:
+                        # Handle both HH:MM and HH:MM:SS formats
+                        try:
+                            brk_start = datetime.strptime(start_str[:5], "%H:%M").time()
+                            brk_end = datetime.strptime(end_str[:5], "%H:%M").time()
+                        except:
+                            brk_start = datetime.strptime(start_str, "%H:%M").time()
+                            brk_end = datetime.strptime(end_str, "%H:%M").time()
+                        
+                        # For overnight shifts, break time before work start means next day
+                        brk_start_dt = datetime.combine(work_start.date(), brk_start)
+                        brk_end_dt = datetime.combine(work_start.date(), brk_end)
+                        
+                        # If break start is before work start, it's on the next day
+                        if brk_start_dt < work_start:
+                            brk_start_dt += timedelta(days=1)
+                            brk_end_dt += timedelta(days=1)
+                        elif brk_end_dt <= brk_start_dt:
+                            brk_end_dt += timedelta(days=1)
+                        
+                        break_periods.append((brk_start_dt, brk_end_dt))
+                except (ValueError, IndexError):
+                    continue
+        
+        # Iterate through each minute of work
+        current_minute = work_start
+        total_worked_minutes = 0
+        while current_minute < work_end:
+            # Check if this minute is during a break
+            is_break = any(brk_start <= current_minute < brk_end for brk_start, brk_end in break_periods)
             
-            # Time-based (night shift)
-            if surcharge_type.time_from and surcharge_type.time_to:
-                overlap_hours = self._calculate_time_overlap(
-                    work_start, work_end,
-                    surcharge_type.time_from, surcharge_type.time_to
-                )
-                # Deduct actual break overlap with this surcharge period
-                break_overlap_hours = self._calculate_break_overlap_with_surcharge(
-                    work_start.date(),
-                    surcharge_type.time_from,
-                    surcharge_type.time_to
-                )
-                overlap_hours = max(0, overlap_hours - break_overlap_hours)
+            if not is_break:
+                total_worked_minutes += 1
+                
+                # Find all applicable surcharges for this minute
+                applicable_for_minute = []
+                current_time = current_minute.time()
+                current_date = current_minute.date()
+                day_of_week = current_date.weekday()
+                
+                for surcharge_info in applicable_surcharges:
+                    st = surcharge_info['surcharge_type']
+                    applies = False
+                    
+                    # Check day constraints first
+                    day_matches = True
+                    if st.days_of_week:
+                        day_matches = day_of_week in st.days_of_week
+                    if st.specific_dates:
+                        date_str = current_date.strftime('%m-%d')
+                        day_matches = date_str in st.specific_dates
+                    
+                    if not day_matches:
+                        continue
+                    
+                    # Check time constraints
+                    if st.time_from and st.time_to:
+                        # Time-based surcharge (e.g., night shift)
+                        if st.time_from > st.time_to:
+                            # Overnight (e.g., 21:00-06:00)
+                            applies = current_time >= st.time_from or current_time < st.time_to
+                        else:
+                            applies = st.time_from <= current_time < st.time_to
+                    elif st.min_hours_threshold:
+                        # Overtime - applies to worked minutes ABOVE threshold
+                        threshold_minutes = float(st.min_hours_threshold) * 60
+                        # Only apply to minutes after threshold
+                        applies = total_worked_minutes > threshold_minutes
+                    else:
+                        # No time constraint - day match is enough
+                        applies = True
+                    
+                    if applies:
+                        applicable_for_minute.append(surcharge_info)
+                
+                # Pick the highest percentage surcharge for this minute
+                if applicable_for_minute:
+                    best = max(applicable_for_minute, key=lambda x: x['percentage'])
+                    name = best['name']
+                    surcharge_minutes[name] = surcharge_minutes.get(name, 0) + 1
+                else:
+                    normal_minutes += 1
             
-            # Day of week (weekend)
-            elif surcharge_type.days_of_week:
-                work_date = work_start.date()
-                if work_date.weekday() in surcharge_type.days_of_week:
-                    overlap_hours = net_work_minutes / 60
-            
-            # Specific dates (holiday)
-            elif surcharge_type.specific_dates:
-                work_date = work_start.date()
-                if work_date.strftime('%m-%d') in surcharge_type.specific_dates:
-                    overlap_hours = net_work_minutes / 60
-            
-            if overlap_hours > 0:
-                surcharge_amount = overlap_hours * rate * (float(customer_surcharge.percentage) / 100)
+            current_minute += timedelta(minutes=1)
+        
+        # Convert minutes to hours and calculate amounts
+        for surcharge_info in applicable_surcharges:
+            name = surcharge_info['name']
+            if name in surcharge_minutes:
+                hours = surcharge_minutes[name] / 60
+                amount = hours * rate * (surcharge_info['percentage'] / 100)
+                category = surcharge_info['category']
+                
                 result['surcharges'].append({
-                    'name': surcharge_type.name,
+                    'name': name,
                     'category': category,
-                    'hours': round(overlap_hours, 2),
-                    'percentage': float(customer_surcharge.percentage),
-                    'amount': round(surcharge_amount, 2),
+                    'hours': round(hours, 2),
+                    'percentage': surcharge_info['percentage'],
+                    'amount': round(amount, 2),
                 })
                 
                 # Update category totals
                 if 'night' in category.lower():
-                    result['night_hours'] = round(overlap_hours, 2)
-                    result['normal_hours'] -= overlap_hours
+                    result['night_hours'] = round(hours, 2)
+                    result['normal_hours'] -= hours
                 elif category == 'saturday':
-                    result['saturday_hours'] = round(overlap_hours, 2)
-                    result['normal_hours'] -= overlap_hours
+                    result['saturday_hours'] = round(hours, 2)
+                    result['weekend_hours'] += round(hours, 2)
+                    result['normal_hours'] -= hours
                 elif category == 'sunday':
-                    result['sunday_hours'] = round(overlap_hours, 2)
-                    result['normal_hours'] -= overlap_hours
+                    result['sunday_hours'] = round(hours, 2)
+                    result['weekend_hours'] += round(hours, 2)
+                    result['normal_hours'] -= hours
+                elif category == 'weekend':
+                    # Combined weekend (Zat. en Zon.)
+                    result['weekend_hours'] += round(hours, 2)
+                    result['normal_hours'] -= hours
                 elif category == 'holiday':
-                    result['holiday_hours'] = round(overlap_hours, 2)
-                    result['normal_hours'] -= overlap_hours
+                    result['holiday_hours'] = round(hours, 2)
+                    result['normal_hours'] -= hours
+                elif category == 'overtime' or 'overwerk' in name.lower():
+                    result['overtime_hours'] = round(hours, 2)
+                    # Don't subtract from normal for overtime
         
         result['normal_hours'] = max(0, round(result['normal_hours'], 2))
+        
+        # Calculate allowances total
+        total_allowances_amount = 0.0
+        if self.allowances and self.project and self.project.customer:
+            from apps.customers.models import CustomerAllowance
+            from apps.employees.models import AllowanceType
+            
+            for allowance_entry in self.allowances:
+                allowance_hours = float(allowance_entry.get('hours', 0))
+                allowance_type_id = allowance_entry.get('allowance_type')
+                
+                if allowance_hours > 0 and allowance_type_id:
+                    try:
+                        customer_allowance = CustomerAllowance.objects.get(
+                            customer=self.project.customer,
+                            allowance_type_id=allowance_type_id,
+                            is_enabled=True
+                        )
+                        allowance_rate = float(customer_allowance.price or 0)
+                        if allowance_rate == 0:
+                            allowance_type = AllowanceType.objects.get(id=allowance_type_id)
+                            allowance_rate = float(allowance_type.base_price or 0)
+                        total_allowances_amount += allowance_hours * allowance_rate
+                    except (CustomerAllowance.DoesNotExist, AllowanceType.DoesNotExist):
+                        pass
+        
+        result['total_allowances_amount'] = round(total_allowances_amount, 2)
         return result
     
     def _calculate_time_overlap(self, work_start, work_end, surcharge_start, surcharge_end):
@@ -1130,6 +1251,8 @@ class WorkEntry(BaseModel):
         
         Uses detailed hour breakdown so partial night shifts are calculated correctly.
         E.g., 02:00-10:30 with night=22:00-06:00: 4h night (with surcharge) + 4h normal
+        
+        Includes base + surcharges + allowances.
         """
         hours = self.calculated_hours
         if hours == 0:
@@ -1150,7 +1273,113 @@ class WorkEntry(BaseModel):
         for s in breakdown.get('surcharges', []):
             total_surcharge_amount += Decimal(str(s.get('amount', 0)))
         
-        return (base_price + total_surcharge_amount).quantize(Decimal('0.01'))
+        # Add allowances (Toeslag)
+        total_allowances_amount = Decimal('0')
+        if self.allowances and self.project and self.project.customer:
+            from apps.customers.models import CustomerAllowance
+            from apps.employees.models import AllowanceType
+            
+            for allowance_entry in self.allowances:
+                allowance_hours = float(allowance_entry.get('hours', 0))
+                allowance_type_id = allowance_entry.get('allowance_type')
+                
+                if allowance_hours > 0 and allowance_type_id:
+                    # Get customer-specific rate for this allowance
+                    try:
+                        customer_allowance = CustomerAllowance.objects.get(
+                            customer=self.project.customer,
+                            allowance_type_id=allowance_type_id,
+                            is_enabled=True
+                        )
+                        allowance_rate = float(customer_allowance.price or 0)
+                        if allowance_rate == 0:
+                            # Fall back to base rate
+                            allowance_type = AllowanceType.objects.get(id=allowance_type_id)
+                            allowance_rate = float(allowance_type.base_price or 0)
+                        total_allowances_amount += Decimal(str(allowance_hours * allowance_rate))
+                    except (CustomerAllowance.DoesNotExist, AllowanceType.DoesNotExist):
+                        pass
+        
+        return (base_price + total_surcharge_amount + total_allowances_amount).quantize(Decimal('0.01'))
+    
+    @property
+    def calculated_employee_payment(self):
+        """Calculate the employee payment for this work entry.
+        
+        Uses:
+        - Employee's hourly_rate (from EmployeeProfile) instead of customer service rate
+        - Only includes surcharges if employee's receives_surcharges is True
+        - Does NOT include allowances (those are billed to customer only)
+        """
+        hours = self.calculated_hours
+        if hours == 0:
+            return Decimal('0')
+        
+        # Get employee's hourly rate - WorkEntry.employee is EmployeeProfile directly
+        employee_rate = Decimal('0')
+        if self.employee and hasattr(self.employee, 'hourly_rate'):
+            employee_rate = self.employee.hourly_rate or Decimal('0')
+        
+        if employee_rate == 0:
+            return Decimal('0')
+        
+        # Base payment
+        base_payment = hours * employee_rate
+        
+        # Only add surcharges if employee receives_surcharges is True
+        total_surcharge_amount = Decimal('0')
+        if self.employee and self.employee.receives_surcharges:
+            breakdown = self.get_hours_breakdown_detailed()
+            for s in breakdown.get('surcharges', []):
+                # Calculate surcharge using employee's rate, not customer rate
+                surcharge_hours = s.get('hours', 0)
+                surcharge_percentage = s.get('percentage', 0)
+                surcharge_amount = surcharge_hours * float(employee_rate) * (surcharge_percentage / 100)
+                total_surcharge_amount += Decimal(str(surcharge_amount))
+        
+        return (base_payment + total_surcharge_amount).quantize(Decimal('0.01'))
+    
+    def get_employee_hours_breakdown(self):
+        """Get hours breakdown for employee payment calculation.
+        
+        Similar to get_hours_breakdown_detailed but uses employee's rate.
+        Only includes surcharges if employee receives_surcharges is True.
+        """
+        breakdown = self.get_hours_breakdown_detailed()
+        
+        # Get employee's hourly rate - WorkEntry.employee is EmployeeProfile directly
+        employee_rate = Decimal('0')
+        receives_surcharges = False
+        if self.employee and hasattr(self.employee, 'hourly_rate'):
+            employee_rate = self.employee.hourly_rate or Decimal('0')
+            receives_surcharges = self.employee.receives_surcharges or False
+        
+        result = {
+            'total_hours': breakdown.get('total_hours', 0),
+            'normal_hours': breakdown.get('normal_hours', 0),
+            'employee_rate': float(employee_rate),
+            'receives_surcharges': receives_surcharges,
+            'base_payment': float(breakdown.get('total_hours', 0) * float(employee_rate)),
+            'surcharges': [],
+            'total_surcharge_amount': 0.0,
+            'total_payment': float(self.calculated_employee_payment),
+        }
+        
+        if receives_surcharges:
+            for s in breakdown.get('surcharges', []):
+                surcharge_hours = s.get('hours', 0)
+                surcharge_percentage = s.get('percentage', 0)
+                surcharge_amount = surcharge_hours * float(employee_rate) * (surcharge_percentage / 100)
+                result['surcharges'].append({
+                    'name': s.get('name'),
+                    'category': s.get('category'),
+                    'hours': surcharge_hours,
+                    'percentage': surcharge_percentage,
+                    'amount': round(surcharge_amount, 2),
+                })
+            result['total_surcharge_amount'] = sum(s['amount'] for s in result['surcharges'])
+        
+        return result
     
     def save(self, *args, **kwargs):
         """Override save to auto-populate fields."""

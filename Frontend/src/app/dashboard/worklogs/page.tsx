@@ -2042,7 +2042,8 @@ export default function WorkLogsPage() {
                                                     const hours = parseFloat(String(log.calculated_hours)) || 0;
                                                     const base = hours * (surcharges?.base_rate || 0);
                                                     const surchargeAmount = surcharges?.total_surcharge_amount ? parseFloat(surcharges.total_surcharge_amount) : 0;
-                                                    return sum + base + surchargeAmount;
+                                                    const allowancesAmount = surcharges?.total_allowances_amount ? parseFloat(surcharges.total_allowances_amount) : 0;
+                                                    return sum + base + surchargeAmount + allowancesAmount;
                                                 }, 0).toFixed(2)}
                                             </span>
                                         </div>

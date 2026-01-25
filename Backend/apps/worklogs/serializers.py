@@ -187,10 +187,16 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
     is_future = serializers.BooleanField(read_only=True)
     can_fill_data = serializers.BooleanField(read_only=True)
     
-    # Price calculation fields
+    # Price calculation fields (Customer billing)
     calculated_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     service_rate = serializers.SerializerMethodField()
     surcharges_applied = serializers.SerializerMethodField()
+    
+    # Employee payment fields
+    employee_payment = serializers.SerializerMethodField()
+    employee_breakdown = serializers.SerializerMethodField()
+    employee_hourly_rate = serializers.SerializerMethodField()
+    receives_surcharges = serializers.SerializerMethodField()
     
     # Invoice-compatible fields
     surcharges_breakdown = serializers.SerializerMethodField()
@@ -221,8 +227,10 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
             'location', 'full_address',
             # Computed
             'calculated_hours', 'is_today', 'is_past', 'is_future', 'can_fill_data',
-            # Price
+            # Customer Price
             'calculated_price', 'service_rate', 'surcharges_applied',
+            # Employee Payment
+            'employee_payment', 'employee_breakdown', 'employee_hourly_rate', 'receives_surcharges',
             # Invoice-compatible
             'surcharges_breakdown', 'hours_breakdown', 'break_duration', 'breaks',
             # Allowances (Toeslag)
@@ -337,8 +345,28 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
         return float(rate) if rate else 0
     
     def get_surcharges_applied(self, obj):
-        """Get list of applicable surcharges with names and percentages."""
-        return obj.get_applicable_surcharges()
+        """Get list of surcharges that actually applied to this work entry.
+        
+        Only returns surcharges with hours > 0 from the calculation.
+        This ensures only applicable surcharges are shown (e.g., no weekend
+        surcharge displayed for weekday work).
+        """
+        breakdown = obj.get_hours_breakdown_detailed()
+        surcharges = breakdown.get('surcharges', [])
+        
+        # Return only surcharges with hours > 0
+        result = []
+        for s in surcharges:
+            if s.get('hours', 0) > 0:
+                result.append({
+                    'id': str(hash(s.get('name', ''))),  # Generate ID from name
+                    'name': s.get('name', ''),
+                    'category': s.get('category', ''),
+                    'percentage': s.get('percentage', 0),
+                    'hours': s.get('hours', 0),
+                    'amount': s.get('amount', 0),
+                })
+        return result
     
     def get_surcharges_breakdown(self, obj):
         """Get comprehensive surcharge breakdown for invoice calculations."""
@@ -353,14 +381,8 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
         base_amount = total_hours * base_rate
         total_surcharge_amount = sum(s.get('amount', 0) for s in surcharges_list)
         
-        # Get allowances amount if any (field may not exist on model)
-        allowances_amount = 0
-        allowances_list = getattr(obj, 'allowances', None)
-        if allowances_list and isinstance(allowances_list, list):
-            for a in allowances_list:
-                a_hours = float(a.get('hours', 0) or 0)
-                a_rate = float(a.get('rate', 0) or 0)
-                allowances_amount += a_hours * a_rate
+        # Get allowances amount from the detailed breakdown (correctly looks up allowance rates)
+        allowances_amount = breakdown.get('total_allowances_amount', 0)
         
         return {
             'base_rate': base_rate,
@@ -384,6 +406,26 @@ class WorkEntryListSerializer(serializers.ModelSerializer):
             mins = minutes % 60
             return f"{hours}:{mins:02d}"
         return "0:00"
+    
+    def get_employee_payment(self, obj):
+        """Get calculated employee payment amount."""
+        return str(obj.calculated_employee_payment)
+    
+    def get_employee_breakdown(self, obj):
+        """Get employee payment breakdown."""
+        return obj.get_employee_hours_breakdown()
+    
+    def get_employee_hourly_rate(self, obj):
+        """Get employee's hourly rate."""
+        if obj.employee and hasattr(obj.employee, 'hourly_rate'):
+            return float(obj.employee.hourly_rate or 0)
+        return 0.0
+    
+    def get_receives_surcharges(self, obj):
+        """Get whether employee receives surcharges."""
+        if obj.employee and hasattr(obj.employee, 'receives_surcharges'):
+            return obj.employee.receives_surcharges or False
+        return False
 
 
 class WorkEntryDetailSerializer(WorkEntryListSerializer):

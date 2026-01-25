@@ -450,20 +450,9 @@ def generate_customer_excel_export(
             ws[f'O{data_row}'].alignment = Alignment(horizontal='center')
             ws[f'O{data_row}'].number_format = '0.00'
         elif export_type == 'finance':
-            # O: TOTAAL BEDRAG (currency) - Calculate with surcharges applied
-            hourly_rate = float(worklog.get('hourly_rate', 32.50))
-            
-            # Calculate amount for each hour type with appropriate surcharge
-            normal_amount = normal_hours * hourly_rate * 1.00       # 100% - no surcharge
-            night_amount = night_hours * hourly_rate * 1.20         # 120% - 20% surcharge
-            weekend_amount = weekend_hours * hourly_rate * 1.30     # 130% - 30% surcharge
-            holiday_amount = holiday_hours * hourly_rate * 2.00     # 200% - 100% surcharge
-            overtime_amount = overtime_hours * hourly_rate * 1.10   # 110% - 10% surcharge
-            sleep_amount = sleep_hours * hourly_rate * 0.90         # 90% - 10% reduction
-            
-            # Total amount includes all surcharges
-            total_amount = (normal_amount + night_amount + weekend_amount + 
-                          holiday_amount + overtime_amount + sleep_amount)
+            # O: TOTAAL BEDRAG (currency) - Use pre-calculated price from backend
+            # This includes base + surcharges + allowances with correct "highest-surcharge-wins" logic
+            total_amount = float(worklog.get('calculated_price', 0))
             
             ws[f'O{data_row}'] = total_amount
             ws[f'O{data_row}'].border = thin_border
@@ -699,6 +688,7 @@ def excel_export_view(request):
             'end_time': end_time,
             'break_duration': break_duration,
             'calculated_hours': entry.calculated_hours,
+            'calculated_price': float(entry.calculated_price),  # Pre-calculated price with surcharges + allowances
             'hours_breakdown': hours_breakdown,
             'supervisor_name': entry.project.outfolder.company_name if entry.project and entry.project.outfolder else '',
             'hourly_rate': entry.get_service_rate() if hasattr(entry, 'get_service_rate') else 32.5,
