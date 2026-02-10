@@ -239,7 +239,7 @@ export default function WorkLogsPage() {
             const headers = { 'Authorization': `Bearer ${token}` };
 
             const [allResponse, pending, unassignedRes] = await Promise.all([
-                api.getWorkEntries({ include_past: true }),
+                api.getWorkEntries({ include_past: true, page_size: 9999 }),
                 api.getPendingWorkEntries(),
                 fetch(`${API_URL}/projects/planned-days/unassigned_shifts/`, { headers }).then(r => r.ok ? r.json() : { results: [] })
             ]);
@@ -669,7 +669,7 @@ export default function WorkLogsPage() {
 
     const stats = {
         total: workLogs.length,
-        pending: workLogs.filter(w => w.status === 'pending').length,
+        pending: workLogs.filter(w => ['pending', 'submitted', 'draft'].includes(w.status)).length,
         approved: workLogs.filter(w => w.status === 'approved').length,
         rejected: workLogs.filter(w => w.status === 'rejected').length,
     };
@@ -1364,10 +1364,16 @@ export default function WorkLogsPage() {
                                 </div>
                                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                                     {[
-                                        { value: 'draft', label: 'Draft', color: '#6B7280', bg: '#F3F4F6' },
+                                        { value: 'planned', label: 'Planned', color: '#3B82F6', bg: '#EFF6FF' },
+                                        { value: 'confirmed', label: 'Confirmed', color: '#4F46E5', bg: '#E0E7FF' },
+                                        { value: 'in_progress', label: 'In Progress', color: '#2563EB', bg: '#DBEAFE' },
+                                        { value: 'draft', label: 'Draft', color: '#7C3AED', bg: '#F3E8FF' },
                                         { value: 'pending', label: 'Pending', color: '#F59E0B', bg: '#FEF3C7' },
+                                        { value: 'submitted', label: 'Submitted', color: '#D97706', bg: '#FEF3C7' },
                                         { value: 'approved', label: 'Approved', color: '#10B981', bg: '#D1FAE5' },
                                         { value: 'rejected', label: 'Rejected', color: '#EF4444', bg: '#FEE2E2' },
+                                        { value: 'cancelled', label: 'Cancelled', color: '#6B7280', bg: '#F3F4F6' },
+                                        { value: 'no_show', label: 'No Show', color: '#EF4444', bg: '#FEE2E2' },
                                     ].map(statusOption => (
                                         <label
                                             key={statusOption.value}
@@ -1830,23 +1836,47 @@ export default function WorkLogsPage() {
                                                                 borderRadius: '9999px',
                                                                 fontSize: '12px',
                                                                 fontWeight: 600,
-                                                                backgroundColor: log.status === 'approved' ? '#DCFCE7' :
-                                                                    log.status === 'pending' ? '#FEF3C7' :
-                                                                        log.status === 'rejected' ? '#FEE2E2' : '#F3F4F6',
-                                                                color: log.status === 'approved' ? '#16A34A' :
-                                                                    log.status === 'pending' ? '#CA8A04' :
-                                                                        log.status === 'rejected' ? '#DC2626' : '#6B7280',
+                                                                backgroundColor:
+                                                                    log.status === 'approved' ? '#DCFCE7' :
+                                                                        log.status === 'pending' ? '#FEF3C7' :
+                                                                            log.status === 'submitted' ? '#FEF3C7' :
+                                                                                log.status === 'rejected' ? '#FEE2E2' :
+                                                                                    log.status === 'no_show' ? '#FEE2E2' :
+                                                                                        log.status === 'draft' ? '#F3E8FF' :
+                                                                                            log.status === 'in_progress' ? '#DBEAFE' :
+                                                                                                log.status === 'planned' ? '#EFF6FF' :
+                                                                                                    log.status === 'confirmed' ? '#E0E7FF' :
+                                                                                                        log.status === 'cancelled' ? '#F3F4F6' : '#F3F4F6',
+                                                                color:
+                                                                    log.status === 'approved' ? '#16A34A' :
+                                                                        log.status === 'pending' ? '#CA8A04' :
+                                                                            log.status === 'submitted' ? '#D97706' :
+                                                                                log.status === 'rejected' ? '#DC2626' :
+                                                                                    log.status === 'no_show' ? '#EF4444' :
+                                                                                        log.status === 'draft' ? '#7C3AED' :
+                                                                                            log.status === 'in_progress' ? '#2563EB' :
+                                                                                                log.status === 'planned' ? '#3B82F6' :
+                                                                                                    log.status === 'confirmed' ? '#4F46E5' :
+                                                                                                        log.status === 'cancelled' ? '#6B7280' : '#6B7280',
                                                             }}
                                                         >
                                                             <span style={{
                                                                 width: '6px',
                                                                 height: '6px',
                                                                 borderRadius: '3px',
-                                                                backgroundColor: log.status === 'approved' ? '#16A34A' :
-                                                                    log.status === 'pending' ? '#CA8A04' :
-                                                                        log.status === 'rejected' ? '#DC2626' : '#6B7280',
+                                                                backgroundColor:
+                                                                    log.status === 'approved' ? '#16A34A' :
+                                                                        log.status === 'pending' ? '#CA8A04' :
+                                                                            log.status === 'submitted' ? '#D97706' :
+                                                                                log.status === 'rejected' ? '#DC2626' :
+                                                                                    log.status === 'no_show' ? '#EF4444' :
+                                                                                        log.status === 'draft' ? '#7C3AED' :
+                                                                                            log.status === 'in_progress' ? '#2563EB' :
+                                                                                                log.status === 'planned' ? '#3B82F6' :
+                                                                                                    log.status === 'confirmed' ? '#4F46E5' :
+                                                                                                        log.status === 'cancelled' ? '#6B7280' : '#6B7280',
                                                             }} />
-                                                            {log.status.charAt(0).toUpperCase() + log.status.slice(1)}
+                                                            {log.status === 'no_show' ? 'No Show' : log.status === 'in_progress' ? 'In Progress' : log.status.charAt(0).toUpperCase() + log.status.slice(1)}
                                                         </span>
                                                     </td>
                                                     <td style={{ padding: '16px 24px' }}>

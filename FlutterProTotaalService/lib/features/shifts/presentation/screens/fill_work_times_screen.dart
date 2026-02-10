@@ -100,7 +100,10 @@ class _FillWorkTimesScreenState extends State<FillWorkTimesScreen> {
               primary: Color(0xFF3B82F6),
             ),
           ),
-          child: child!,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
         );
       },
     );

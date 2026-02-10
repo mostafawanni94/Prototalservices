@@ -131,6 +131,7 @@ class ApiClient {
     // Work Entries (Unified - replaces WorkLogs and ShiftAssignments)
     async getWorkEntries(params?: {
         page?: number;
+        page_size?: number;
         status?: string;
         customer?: string;
         employee?: string[];
@@ -140,6 +141,7 @@ class ApiClient {
     }) {
         const queryParams = new URLSearchParams();
         if (params?.page) queryParams.append('page', params.page.toString());
+        if (params?.page_size) queryParams.append('page_size', params.page_size.toString());
         if (params?.status) queryParams.append('status', params.status);
         if (params?.customer) queryParams.append('customer', params.customer);
         if (params?.employee) params.employee.forEach(e => queryParams.append('employee', e));

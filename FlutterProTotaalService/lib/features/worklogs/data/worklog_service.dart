@@ -244,9 +244,19 @@ class WorkLogService {
     List<WorkLogAllowanceModel>? allowances,
     List<String>? photoPaths,
   }) async {
-    // Build datetime strings from date and time
-    final startDateTime = '${date.toIso8601String().split('T')[0]}T$startTime:00';
-    final endDateTime = '${date.toIso8601String().split('T')[0]}T$endTime:00';
+    // Build datetime strings from date and time with timezone offset
+    // We must include the local timezone offset so Django doesn't treat
+    // the datetime as UTC (which causes a +1h shift for Europe/Amsterdam)
+    final now = DateTime.now();
+    final offset = now.timeZoneOffset;
+    final sign = offset.isNegative ? '-' : '+';
+    final hours = offset.inHours.abs().toString().padLeft(2, '0');
+    final minutes = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    final tzSuffix = '$sign$hours:$minutes'; // e.g. "+01:00" or "+02:00"
+    
+    final dateStr = date.toIso8601String().split('T')[0];
+    final startDateTime = '${dateStr}T$startTime:00$tzSuffix';
+    final endDateTime = '${dateStr}T$endTime:00$tzSuffix';
     
     final body = <String, dynamic>{
       'actual_start_datetime': startDateTime,

@@ -114,7 +114,10 @@ class _ShiftDetailScreenState extends State<ShiftDetailScreen> {
               primary: Color(0xFF1E3A5F),
             ),
           ),
-          child: child!,
+          child: MediaQuery(
+            data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+            child: child!,
+          ),
         );
       },
     );

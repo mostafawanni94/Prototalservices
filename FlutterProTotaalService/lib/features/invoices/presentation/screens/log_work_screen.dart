@@ -1084,12 +1084,26 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
         const SizedBox(height: 8),
         Row(children: [
           Expanded(child: _TimePickerField(label: 'Start', time: _startTime, onTap: () async {
-            final t = await showTimePicker(context: context, initialTime: _startTime);
+            final t = await showTimePicker(
+              context: context,
+              initialTime: _startTime,
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                child: child!,
+              ),
+            );
             if (t != null) setState(() => _startTime = t);
           })),
           const SizedBox(width: 12),
           Expanded(child: _TimePickerField(label: 'End', time: _endTime, onTap: () async {
-            final t = await showTimePicker(context: context, initialTime: _endTime);
+            final t = await showTimePicker(
+              context: context,
+              initialTime: _endTime,
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                child: child!,
+              ),
+            );
             if (t != null) setState(() => _endTime = t);
           })),
         ]),
@@ -1158,7 +1172,14 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () async {
-                          final t = await showTimePicker(context: context, initialTime: brk.start ?? const TimeOfDay(hour: 12, minute: 0));
+                          final t = await showTimePicker(
+                            context: context,
+                            initialTime: brk.start ?? const TimeOfDay(hour: 12, minute: 0),
+                            builder: (context, child) => MediaQuery(
+                              data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                              child: child!,
+                            ),
+                          );
                           if (t != null) setState(() => _breaks[index].start = t);
                         },
                         child: Column(
@@ -1175,7 +1196,14 @@ class _LogWorkScreenState extends State<LogWorkScreen> {
                     Expanded(
                       child: GestureDetector(
                         onTap: () async {
-                          final t = await showTimePicker(context: context, initialTime: brk.end ?? const TimeOfDay(hour: 12, minute: 30));
+                          final t = await showTimePicker(
+                            context: context,
+                            initialTime: brk.end ?? const TimeOfDay(hour: 12, minute: 30),
+                            builder: (context, child) => MediaQuery(
+                              data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                              child: child!,
+                            ),
+                          );
                           if (t != null) setState(() => _breaks[index].end = t);
                         },
                         child: Padding(

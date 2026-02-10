@@ -181,7 +181,14 @@ class _WorkLogSubmissionScreenState extends State<WorkLogSubmissionScreen> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () async {
-                      final time = await showTimePicker(context: context, initialTime: _startTime);
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: _startTime,
+                        builder: (context, child) => MediaQuery(
+                          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                          child: child!,
+                        ),
+                      );
                       if (time != null) setState(() => _startTime = time);
                     },
                     child: Container(
@@ -204,7 +211,14 @@ class _WorkLogSubmissionScreenState extends State<WorkLogSubmissionScreen> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () async {
-                      final time = await showTimePicker(context: context, initialTime: _endTime);
+                      final time = await showTimePicker(
+                        context: context,
+                        initialTime: _endTime,
+                        builder: (context, child) => MediaQuery(
+                          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+                          child: child!,
+                        ),
+                      );
                       if (time != null) setState(() => _endTime = time);
                     },
                     child: Container(
