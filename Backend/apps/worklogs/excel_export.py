@@ -239,72 +239,123 @@ def generate_customer_excel_export(
     # === TABLE SECTION (One continuous table from A-X) ===
     
     # Row 8: Customer name header above hour columns + Storm logo position
-    ws['I8'] = customer_name or 'Customer'
-    ws['I8'].font = header_font
-    ws['I8'].alignment = Alignment(horizontal='center')
+    ws['L8'] = customer_name or 'Customer'
+    ws['L8'].font = header_font
+    ws['L8'].alignment = Alignment(horizontal='center')
     
-    # Row 9: Main table headers based on export_type
-    # Columns A-G (basic info) + H-N (hour types) + O (total)
-    row9_headers = {
-        'A': 'Medewerker naam',
-        'B': 'FUNCTEI',
-        'C': 'DAG',
-        'D': 'DATUM',
-        'E': 'BEGIN PROJECT',
-        'F': 'EINDE PROJECT',
-        'G': 'pauze',
-        # Hour type columns - same for both HR and Finance (shifted: was I-O, now H-N)
-        'H': 'Normaal Uren',
-        'I': 'Night Shift',
-        'J': 'Zaterdag en zondagen',
-        'K': 'Feestdagen',
-        'L': 'overuur',
-        'M': 'Slaap uren',
-        'N': 'Toeslagen',
-    }
+    # Column layout differs between HR and Finance exports
+    # HR: J-Q for hour breakdown, R for TOTAAL UREN
+    # Finance: J for Totaal Uren, K-R for breakdown, S for TOTAAL BEDRAG
     
-    # Only column O differs between HR and Finance (was P)
     if export_type == 'hr':
-        row9_headers['O'] = 'TOTAAL UREN'
-    elif export_type == 'finance':
-        row9_headers['O'] = 'TOTAAL BEDRAG'
+        row9_headers = {
+            'A': 'Medewerker naam',
+            'B': 'FUNCTEI',
+            'C': 'DAG',
+            'D': 'DATUM',
+            'E': 'BEGIN PROJECT',
+            'F': 'EINDE PROJECT',
+            'G': 'pauze',
+            'H': 'Pauza Begin',
+            'I': 'Pauza Einde',
+            'J': 'Regulieredienst',           # Total hours if ONLY normal hours worked, else 0
+            'K': 'Ploegendiensturen',         # Total hours if ANY surcharge hours worked, else 0
+            'L': 'Normaal Uren',              # Normal weekday hours (breakdown)
+            'M': 'Night Shift',
+            'N': 'Zaterdag en zondagen',
+            'O': 'Feestdagen',
+            'P': 'overuur',
+            'Q': 'Slaap uren',
+            'R': 'Toeslagen',
+            'S': 'TOTAAL UREN',
+        }
+        hour_columns = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S']
+        last_col = 'S'
+    else:  # finance
+        row9_headers = {
+            'A': 'Medewerker naam',
+            'B': 'FUNCTEI',
+            'C': 'DAG',
+            'D': 'DATUM',
+            'E': 'BEGIN PROJECT',
+            'F': 'EINDE PROJECT',
+            'G': 'pauze',
+            'H': 'Pauza Begin',
+            'I': 'Pauza Einde',
+            'J': 'Totaal Uren',
+            'K': 'Regulieredienst',           # Total hours if ONLY normal hours worked, else 0
+            'L': 'Ploegendiensturen',         # Total hours if ANY surcharge hours worked, else 0
+            'M': 'Normaal Uren',              # Normal weekday hours (breakdown)
+            'N': 'Night Shift',
+            'O': 'Zaterdag en zondagen',
+            'P': 'Feestdagen',
+            'Q': 'overuur',
+            'R': 'Slaap uren',
+            'S': 'Toeslagen',
+            'T': 'TOTAAL BEDRAG',
+        }
+        hour_columns = ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T']
+        last_col = 'T'
 
     for col, header in row9_headers.items():
         ws[f'{col}9'] = header
         ws[f'{col}9'].font = header_font
         ws[f'{col}9'].border = thin_border
         ws[f'{col}9'].alignment = Alignment(horizontal='center', wrap_text=True)
-        # Green fill for hour type columns (H-N) and column O
-        if col in ['H', 'I', 'J', 'K', 'L', 'M', 'N'] or col == 'O':
+        # Green fill for hour type columns
+        if col in hour_columns:
             ws[f'{col}9'].fill = green_fill
 
     
-    # Row 10: Percentages under hour type columns (H-N) - same for both HR and Finance
-    default_hour_percentages = {
-        'H': '100%',
-        'I': '120%',   # Night shift
-        'J': '130%',   # Weekend
-        'K': '200%',   # Holiday
-        'L': '110%',   # Overtime
-        'M': '90%',    # Sleep hours
-        'N': 'EPZ',    # Allowance placeholder
-    }
+    # Row 10: Percentages under hour type columns
+    if export_type == 'hr':
+        default_hour_percentages = {
+            'J': '',       # Regulieredienst - no percentage
+            'K': '',       # Ploegendiensturen - no percentage
+            'L': '100%',   # Normaal Uren
+            'M': '120%',   # Night shift
+            'N': '130%',   # Weekend
+            'O': '200%',   # Holiday
+            'P': '110%',   # Overtime
+            'Q': '90%',    # Sleep hours
+            'R': 'EPZ',    # Allowance placeholder
+        }
+    else:  # finance
+        default_hour_percentages = {
+            'J': '',       # Totaal Uren - no percentage
+            'K': '',       # Regulieredienst - no percentage
+            'L': '',       # Ploegendiensturen - no percentage
+            'M': '100%',   # Normaal Uren
+            'N': '120%',   # Night shift
+            'O': '130%',   # Weekend
+            'P': '200%',   # Holiday
+            'Q': '110%',   # Overtime
+            'R': '90%',    # Sleep hours
+            'S': 'EPZ',    # Allowance placeholder
+        }
     
     # Override with customer surcharges if provided
     if customer_surcharges:
+        # Column mapping differs based on export type
+        night_col = 'M' if export_type == 'hr' else 'N'
+        weekend_col = 'N' if export_type == 'hr' else 'O'
+        holiday_col = 'O' if export_type == 'hr' else 'P'
+        overtime_col = 'P' if export_type == 'hr' else 'Q'
+        sleep_col = 'Q' if export_type == 'hr' else 'R'
+        
         for sc in customer_surcharges:
             name = sc.get('name', '').lower()
             pct = sc.get('percentage', 0)
             if 'night' in name or 'nacht' in name:
-                default_hour_percentages['I'] = f"{int(pct) + 100}%"
+                default_hour_percentages[night_col] = f"{int(pct) + 100}%"
             elif 'zat' in name or 'zon' in name or 'weekend' in name:
-                default_hour_percentages['J'] = f"{int(pct) + 100}%"
+                default_hour_percentages[weekend_col] = f"{int(pct) + 100}%"
             elif 'feest' in name or 'holiday' in name:
-                default_hour_percentages['K'] = f"{int(pct) + 100}%"
+                default_hour_percentages[holiday_col] = f"{int(pct) + 100}%"
             elif 'over' in name:
-                default_hour_percentages['L'] = f"{int(pct) + 100}%"
+                default_hour_percentages[overtime_col] = f"{int(pct) + 100}%"
             elif 'slaap' in name or 'sleep' in name:
-                default_hour_percentages['M'] = f"{int(pct)}%"
+                default_hour_percentages[sleep_col] = f"{int(pct)}%"
     
     for col, pct in default_hour_percentages.items():
         ws[f'{col}10'] = pct
@@ -317,23 +368,18 @@ def generate_customer_excel_export(
 
     
     # Set column widths for continuous table (wider to fit all text)
-    table_column_widths = {
-        'A': 30,   # Medewerker naam (long names)
-        'B': 28,   # FUNCTEI (service names can be long)
-        'C': 6,    # DAG
-        'D': 12,   # DATUM
-        'E': 14,   # BEGIN PROJECT
-        'F': 14,   # EINDE PROJECT
-        'G': 10,   # pauze
-        'H': 14,   # Normaal Uren
-        'I': 12,   # Night Shift
-        'J': 16,   # Zaterdag en zondagen
-        'K': 12,   # Feestdagen
-        'L': 10,   # overuur
-        'M': 12,   # Slaap uren
-        'N': 12,   # Toeslagen
-        'O': 14,   # TOTAAL UREN/BEDRAG
-    }
+    if export_type == 'hr':
+        table_column_widths = {
+            'A': 30, 'B': 28, 'C': 6, 'D': 12, 'E': 14, 'F': 14, 'G': 10,
+            'H': 12, 'I': 12,
+            'J': 14, 'K': 16, 'L': 16, 'M': 12, 'N': 16, 'O': 12, 'P': 10, 'Q': 12, 'R': 12, 'S': 14,
+        }
+    else:  # finance
+        table_column_widths = {
+            'A': 30, 'B': 28, 'C': 6, 'D': 12, 'E': 14, 'F': 14, 'G': 10,
+            'H': 12, 'I': 12,
+            'J': 12, 'K': 14, 'L': 16, 'M': 16, 'N': 12, 'O': 16, 'P': 12, 'Q': 10, 'R': 12, 'S': 12, 'T': 14,
+        }
 
 
     
@@ -386,50 +432,30 @@ def generate_customer_excel_export(
         ws[f'G{data_row}'].border = thin_border
         ws[f'G{data_row}'].alignment = Alignment(horizontal='center')
         
-        # Hour breakdown columns (H-N) - get from hours_breakdown
-        # Same for both HR and Finance exports
+        # H: Pauza Begin (Break start time) - NEW
+        ws[f'H{data_row}'] = worklog.get('break_start', '')
+        ws[f'H{data_row}'].border = thin_border
+        ws[f'H{data_row}'].alignment = Alignment(horizontal='center')
+        
+        # I: Pauza Einde (Break end time) - NEW
+        ws[f'I{data_row}'] = worklog.get('break_end', '')
+        ws[f'I{data_row}'].border = thin_border
+        ws[f'I{data_row}'].alignment = Alignment(horizontal='center')
+        
+        # Hour breakdown columns - layout differs between HR and Finance
         hours_breakdown = worklog.get('hours_breakdown', {})
         calculated_hours = worklog.get('calculated_hours', 0)
         total_hours = float(calculated_hours or 8)  # Default 8 if not calculated
         
-        # H: Normaal Uren (100%) - store as number for SUM to work
-        normal_hours = float(hours_breakdown.get('normal_hours', calculated_hours) or calculated_hours or 0)
-        ws[f'H{data_row}'] = normal_hours if normal_hours else 0
-        ws[f'H{data_row}'].border = thin_border
-        ws[f'H{data_row}'].alignment = Alignment(horizontal='center')
-        ws[f'H{data_row}'].number_format = '0.00'
-        
-        # I: Night Shift - store as number
+        # Extract hour values
+        normal_hours = float(hours_breakdown.get('normal_hours', 0) or 0)
         night_hours = float(hours_breakdown.get('night_hours', 0) or 0)
-        ws[f'I{data_row}'] = night_hours if night_hours else 0
-        ws[f'I{data_row}'].border = thin_border
-        ws[f'I{data_row}'].number_format = '0.00'
-        
-        # J: Zaterdag en zondagen - store as number
         weekend_hours = float(hours_breakdown.get('weekend_hours', 0) or 0)
-        ws[f'J{data_row}'] = weekend_hours if weekend_hours else 0
-        ws[f'J{data_row}'].border = thin_border
-        ws[f'J{data_row}'].number_format = '0.00'
-        
-        # K: Feestdagen - store as number
         holiday_hours = float(hours_breakdown.get('holiday_hours', 0) or 0)
-        ws[f'K{data_row}'] = holiday_hours if holiday_hours else 0
-        ws[f'K{data_row}'].border = thin_border
-        ws[f'K{data_row}'].number_format = '0.00'
-        
-        # L: overuur - store as number
         overtime_hours = float(hours_breakdown.get('overtime_hours', 0) or 0)
-        ws[f'L{data_row}'] = overtime_hours if overtime_hours else 0
-        ws[f'L{data_row}'].border = thin_border
-        ws[f'L{data_row}'].number_format = '0.00'
-        
-        # M: Slaap uren - store as number
         sleep_hours = float(hours_breakdown.get('sleep_hours', 0) or 0)
-        ws[f'M{data_row}'] = sleep_hours if sleep_hours else 0
-        ws[f'M{data_row}'].border = thin_border
-        ws[f'M{data_row}'].number_format = '0.00'
         
-        # N: Toeslagen (EPZ) - calculate from allowances array
+        # Calculate allowance hours
         allowances_list = worklog.get('allowances', [])
         total_allowance_hours = 0
         if allowances_list and isinstance(allowances_list, list):
@@ -438,26 +464,116 @@ def generate_customer_excel_export(
                     total_allowance_hours += float(allowance.get('hours', 0) or 0)
                 except (ValueError, TypeError):
                     pass
-        ws[f'N{data_row}'] = total_allowance_hours
-        ws[f'N{data_row}'].border = thin_border
-        ws[f'N{data_row}'].number_format = '0.00'
         
-        # Column O differs between HR and Finance (was P)
+        # Calculate Regulieredienst and Ploegendiensturen using either/or logic
+        # Check if ANY surcharge hours exist (night, weekend, holiday, overtime)
+        has_surcharge_hours = (night_hours + weekend_hours + holiday_hours + overtime_hours) > 0
+        
+        # Either/or logic:
+        # - Regulieredienst = total_hours if ONLY normal hours worked (no surcharges), else 0
+        # - Ploegendiensturen = total_hours if ANY surcharge hours worked, else 0
+        regulieredienst_hours = total_hours if not has_surcharge_hours else 0
+        ploegendienst_hours = total_hours if has_surcharge_hours else 0
+        
         if export_type == 'hr':
-            # O: TOTAAL UREN (hours) - store as number
-            ws[f'O{data_row}'] = total_hours
-            ws[f'O{data_row}'].border = thin_border
-            ws[f'O{data_row}'].alignment = Alignment(horizontal='center')
-            ws[f'O{data_row}'].number_format = '0.00'
-        elif export_type == 'finance':
-            # O: TOTAAL BEDRAG (currency) - Use pre-calculated price from backend
-            # This includes base + surcharges + allowances with correct "highest-surcharge-wins" logic
-            total_amount = float(worklog.get('calculated_price', 0))
+            # HR layout: J=Reguliere, K=Ploegendienst, L=Normaal, M=Night, N=Weekend, O=Holiday, P=Overtime, Q=Sleep, R=Toeslagen, S=TOTAAL
+            ws[f'J{data_row}'] = regulieredienst_hours
+            ws[f'J{data_row}'].border = thin_border
+            ws[f'J{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'J{data_row}'].number_format = '0.00'
             
-            ws[f'O{data_row}'] = total_amount
+            ws[f'K{data_row}'] = ploegendienst_hours
+            ws[f'K{data_row}'].border = thin_border
+            ws[f'K{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'K{data_row}'].number_format = '0.00'
+            
+            ws[f'L{data_row}'] = normal_hours
+            ws[f'L{data_row}'].border = thin_border
+            ws[f'L{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'L{data_row}'].number_format = '0.00'
+            
+            ws[f'M{data_row}'] = night_hours if night_hours else 0
+            ws[f'M{data_row}'].border = thin_border
+            ws[f'M{data_row}'].number_format = '0.00'
+            
+            ws[f'N{data_row}'] = weekend_hours if weekend_hours else 0
+            ws[f'N{data_row}'].border = thin_border
+            ws[f'N{data_row}'].number_format = '0.00'
+            
+            ws[f'O{data_row}'] = holiday_hours if holiday_hours else 0
             ws[f'O{data_row}'].border = thin_border
-            ws[f'O{data_row}'].alignment = Alignment(horizontal='right')
-            ws[f'O{data_row}'].number_format = '€#,##0.00'
+            ws[f'O{data_row}'].number_format = '0.00'
+            
+            ws[f'P{data_row}'] = overtime_hours if overtime_hours else 0
+            ws[f'P{data_row}'].border = thin_border
+            ws[f'P{data_row}'].number_format = '0.00'
+            
+            ws[f'Q{data_row}'] = sleep_hours if sleep_hours else 0
+            ws[f'Q{data_row}'].border = thin_border
+            ws[f'Q{data_row}'].number_format = '0.00'
+            
+            ws[f'R{data_row}'] = total_allowance_hours
+            ws[f'R{data_row}'].border = thin_border
+            ws[f'R{data_row}'].number_format = '0.00'
+            
+            # S: TOTAAL UREN
+            ws[f'S{data_row}'] = total_hours
+            ws[f'S{data_row}'].border = thin_border
+            ws[f'S{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'S{data_row}'].number_format = '0.00'
+        
+        else:  # finance
+            # Finance layout: J=Totaal, K=Reguliere, L=Ploegendienst, M=Normaal, N=Night, O=Weekend, P=Holiday, Q=Overtime, R=Sleep, S=Toeslagen, T=BEDRAG
+            ws[f'J{data_row}'] = total_hours
+            ws[f'J{data_row}'].border = thin_border
+            ws[f'J{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'J{data_row}'].number_format = '0.00'
+            
+            ws[f'K{data_row}'] = regulieredienst_hours
+            ws[f'K{data_row}'].border = thin_border
+            ws[f'K{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'K{data_row}'].number_format = '0.00'
+            
+            ws[f'L{data_row}'] = ploegendienst_hours
+            ws[f'L{data_row}'].border = thin_border
+            ws[f'L{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'L{data_row}'].number_format = '0.00'
+            
+            ws[f'M{data_row}'] = normal_hours
+            ws[f'M{data_row}'].border = thin_border
+            ws[f'M{data_row}'].alignment = Alignment(horizontal='center')
+            ws[f'M{data_row}'].number_format = '0.00'
+            
+            ws[f'N{data_row}'] = night_hours if night_hours else 0
+            ws[f'N{data_row}'].border = thin_border
+            ws[f'N{data_row}'].number_format = '0.00'
+            
+            ws[f'O{data_row}'] = weekend_hours if weekend_hours else 0
+            ws[f'O{data_row}'].border = thin_border
+            ws[f'O{data_row}'].number_format = '0.00'
+            
+            ws[f'P{data_row}'] = holiday_hours if holiday_hours else 0
+            ws[f'P{data_row}'].border = thin_border
+            ws[f'P{data_row}'].number_format = '0.00'
+            
+            ws[f'Q{data_row}'] = overtime_hours if overtime_hours else 0
+            ws[f'Q{data_row}'].border = thin_border
+            ws[f'Q{data_row}'].number_format = '0.00'
+            
+            ws[f'R{data_row}'] = sleep_hours if sleep_hours else 0
+            ws[f'R{data_row}'].border = thin_border
+            ws[f'R{data_row}'].number_format = '0.00'
+            
+            ws[f'S{data_row}'] = total_allowance_hours
+            ws[f'S{data_row}'].border = thin_border
+            ws[f'S{data_row}'].number_format = '0.00'
+            
+            # T: TOTAAL BEDRAG (currency)
+            total_amount = float(worklog.get('calculated_price', 0))
+            ws[f'T{data_row}'] = total_amount
+            ws[f'T{data_row}'].border = thin_border
+            ws[f'T{data_row}'].alignment = Alignment(horizontal='right')
+            ws[f'T{data_row}'].number_format = '€#,##0.00'
 
 
 
@@ -474,8 +590,8 @@ def generate_customer_excel_export(
     ws[f'A{total_row}'].font = Font(bold=True, size=11)
     ws[f'A{total_row}'].border = thin_border
     
-    # Empty cells for columns B-G
-    for col in ['B', 'C', 'D', 'E', 'F', 'G']:
+    # Empty cells for columns B-I (including break time columns H, I which don't need totals)
+    for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']:
         ws[f'{col}{total_row}'] = ''
         ws[f'{col}{total_row}'].border = thin_border
     
@@ -484,9 +600,8 @@ def generate_customer_excel_export(
     last_data_row = total_row - 1
     
     if export_type == 'hr':
-        # HR Export: Sum hour breakdown columns (H-N) and TOTAAL UREN (O)
-        for col in ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O']:
-            # Create SUM formula for the column
+        # HR Export: Sum hour breakdown columns (J-R) and TOTAAL UREN (S)
+        for col in ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S']:
             ws[f'{col}{total_row}'] = f'=SUM({col}{first_data_row}:{col}{last_data_row})'
             ws[f'{col}{total_row}'].font = Font(bold=True, size=11)
             ws[f'{col}{total_row}'].border = thin_border
@@ -495,22 +610,22 @@ def generate_customer_excel_export(
             ws[f'{col}{total_row}'].number_format = '#,##0.00'
     
     elif export_type == 'finance':
-        # Finance Export: Sum hour columns (H-N) and TOTAAL BEDRAG (O)
-        for col in ['H', 'I', 'J', 'K', 'L', 'M', 'N']:
+        # Finance Export: Sum hour columns (J-S) and TOTAAL BEDRAG (T)
+        for col in ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S']:
             ws[f'{col}{total_row}'] = f'=SUM({col}{first_data_row}:{col}{last_data_row})'
             ws[f'{col}{total_row}'].font = Font(bold=True, size=11)
             ws[f'{col}{total_row}'].border = thin_border
             ws[f'{col}{total_row}'].alignment = Alignment(horizontal='center')
             ws[f'{col}{total_row}'].fill = green_fill
-            ws[f'{col}{total_row}'].number_format = '#,##0.00'  # Hours, not currency
+            ws[f'{col}{total_row}'].number_format = '#,##0.00'
         
-        # TOTAAL BEDRAG sum (O) - currency format
-        ws[f'O{total_row}'] = f'=SUM(O{first_data_row}:O{last_data_row})'
-        ws[f'O{total_row}'].font = Font(bold=True, size=11)
-        ws[f'O{total_row}'].border = thin_border
-        ws[f'O{total_row}'].alignment = Alignment(horizontal='right')
-        ws[f'O{total_row}'].fill = green_fill
-        ws[f'O{total_row}'].number_format = '€#,##0.00'
+        # TOTAAL BEDRAG sum (T) - currency format
+        ws[f'T{total_row}'] = f'=SUM(T{first_data_row}:T{last_data_row})'
+        ws[f'T{total_row}'].font = Font(bold=True, size=11)
+        ws[f'T{total_row}'].border = thin_border
+        ws[f'T{total_row}'].alignment = Alignment(horizontal='right')
+        ws[f'T{total_row}'].fill = green_fill
+        ws[f'T{total_row}'].number_format = '€#,##0.00'
 
 
 
@@ -679,6 +794,20 @@ def excel_export_view(request):
         break_duration = f"{break_mins // 60}:{break_mins % 60:02d}"
 
         
+        # Extract break start/end times from breaks JSON array
+        break_start = ''
+        break_end = ''
+        if entry.breaks and isinstance(entry.breaks, list) and len(entry.breaks) > 0:
+            first_break = entry.breaks[0]
+            if isinstance(first_break, dict):
+                bs = first_break.get('start', '')
+                be = first_break.get('end', '')
+                # Format as HH:MM (remove seconds if present)
+                if bs:
+                    break_start = str(bs)[:5] if len(str(bs)) >= 5 else str(bs)
+                if be:
+                    break_end = str(be)[:5] if len(str(be)) >= 5 else str(be)
+        
         worklogs.append({
             'employee_name': entry.employee.full_name if entry.employee else '',
             'project_name': entry.project.name if entry.project else '',
@@ -687,6 +816,8 @@ def excel_export_view(request):
             'start_time': start_time,
             'end_time': end_time,
             'break_duration': break_duration,
+            'break_start': break_start,
+            'break_end': break_end,
             'calculated_hours': entry.calculated_hours,
             'calculated_price': float(entry.calculated_price),  # Pre-calculated price with surcharges + allowances
             'hours_breakdown': hours_breakdown,

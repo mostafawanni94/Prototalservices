@@ -283,6 +283,69 @@ export default function AddWorkLogPage() {
         const updated = [...breaks];
         updated[index][field] = value;
         setBreaks(updated);
+
+        // Validate break is within work hours
+        validateBreakTime(updated[index], index);
+    }
+
+    // Helper function to validate break times are within work hours (real-time feedback)
+    function validateBreakTime(brk: { start: string; end: string }, index: number) {
+        if (!brk.start || !brk.end || !startDatetime || !endDatetime) {
+            // Clear error if incomplete data
+            setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[`break_${index}`];
+                return newErrors;
+            });
+            return;
+        }
+
+        // Parse work start/end times
+        const workStart = new Date(startDatetime);
+        const workEnd = new Date(endDatetime);
+        const isOvernight = workEnd.getDate() > workStart.getDate() || workEnd < workStart;
+
+        // Parse break times (HH:MM format)
+        const [breakStartH, breakStartM] = brk.start.split(':').map(Number);
+        const [breakEndH, breakEndM] = brk.end.split(':').map(Number);
+        const workStartH = workStart.getHours();
+        const workStartM = workStart.getMinutes();
+        const workEndH = workEnd.getHours();
+        const workEndM = workEnd.getMinutes();
+
+        // Convert to minutes for easier comparison
+        const breakStartMins = breakStartH * 60 + breakStartM;
+        const breakEndMins = breakEndH * 60 + breakEndM;
+        const workStartMins = workStartH * 60 + workStartM;
+        const workEndMins = workEndH * 60 + workEndM;
+
+        let isValid = false;
+
+        if (isOvernight) {
+            // For overnight shifts (e.g., 21:00-05:00):
+            // Valid if break is in evening part [workStart, 23:59] OR morning part [00:00, workEnd]
+            const breakInEvening = breakStartMins >= workStartMins && breakEndMins >= workStartMins;
+            const breakInMorning = breakStartMins <= workEndMins && breakEndMins <= workEndMins;
+            isValid = breakInEvening || breakInMorning;
+        } else {
+            // Same-day shift: break must be fully within work window
+            isValid = breakStartMins >= workStartMins && breakEndMins <= workEndMins;
+        }
+
+        if (!isValid) {
+            const workStartStr = `${String(workStartH).padStart(2, '0')}:${String(workStartM).padStart(2, '0')}`;
+            const workEndStr = `${String(workEndH).padStart(2, '0')}:${String(workEndM).padStart(2, '0')}`;
+            setErrors(prev => ({
+                ...prev,
+                [`break_${index}`]: `Break must be within work hours (${workStartStr}-${workEndStr})`
+            }));
+        } else {
+            setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[`break_${index}`];
+                return newErrors;
+            });
+        }
     }
 
     // Allowance functions
@@ -952,50 +1015,69 @@ export default function AddWorkLogPage() {
                                             if (durationMins < 0) durationMins += 24 * 60; // Handle overnight
                                         }
 
+                                        const breakError = errors[`break_${index}`];
+
                                         return (
-                                            <div key={index} style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
-                                                <div style={{ flex: 1 }}>
-                                                    <label style={{ ...labelStyle, fontSize: '12px', color: '#92400E' }}>Start</label>
-                                                    <input
-                                                        type="time"
-                                                        value={brk.start}
-                                                        onChange={(e) => updateBreak(index, 'start', e.target.value)}
-                                                        style={{ ...inputStyle, padding: '10px 12px', backgroundColor: 'white' }}
-                                                    />
+                                            <div key={index}>
+                                                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+                                                    <div style={{ flex: 1 }}>
+                                                        <label style={{ ...labelStyle, fontSize: '12px', color: breakError ? '#DC2626' : '#92400E' }}>Start</label>
+                                                        <input
+                                                            type="time"
+                                                            value={brk.start}
+                                                            onChange={(e) => updateBreak(index, 'start', e.target.value)}
+                                                            style={{
+                                                                ...inputStyle,
+                                                                padding: '10px 12px',
+                                                                backgroundColor: breakError ? '#FEF2F2' : 'white',
+                                                                borderColor: breakError ? '#DC2626' : '#E5E7EB'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <div style={{ flex: 1 }}>
+                                                        <label style={{ ...labelStyle, fontSize: '12px', color: breakError ? '#DC2626' : '#92400E' }}>End</label>
+                                                        <input
+                                                            type="time"
+                                                            value={brk.end}
+                                                            onChange={(e) => updateBreak(index, 'end', e.target.value)}
+                                                            style={{
+                                                                ...inputStyle,
+                                                                padding: '10px 12px',
+                                                                backgroundColor: breakError ? '#FEF2F2' : 'white',
+                                                                borderColor: breakError ? '#DC2626' : '#E5E7EB'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    {/* Duration display */}
+                                                    <div style={{
+                                                        padding: '10px 14px',
+                                                        backgroundColor: breakError ? '#DC2626' : '#F59E0B',
+                                                        color: 'white',
+                                                        borderRadius: '8px',
+                                                        fontSize: '13px',
+                                                        fontWeight: 600,
+                                                        minWidth: '60px',
+                                                        textAlign: 'center'
+                                                    }}>
+                                                        {durationMins > 0 ? `${durationMins} min` : '--'}
+                                                    </div>
+                                                    {breaks.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeBreak(index)}
+                                                            style={{
+                                                                padding: '10px', backgroundColor: '#FEE2E2',
+                                                                border: 'none', borderRadius: '8px', cursor: 'pointer'
+                                                            }}
+                                                        >
+                                                            <Trash2 size={16} style={{ color: '#DC2626' }} />
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                <div style={{ flex: 1 }}>
-                                                    <label style={{ ...labelStyle, fontSize: '12px', color: '#92400E' }}>End</label>
-                                                    <input
-                                                        type="time"
-                                                        value={brk.end}
-                                                        onChange={(e) => updateBreak(index, 'end', e.target.value)}
-                                                        style={{ ...inputStyle, padding: '10px 12px', backgroundColor: 'white' }}
-                                                    />
-                                                </div>
-                                                {/* Duration display */}
-                                                <div style={{
-                                                    padding: '10px 14px',
-                                                    backgroundColor: '#F59E0B',
-                                                    color: 'white',
-                                                    borderRadius: '8px',
-                                                    fontSize: '13px',
-                                                    fontWeight: 600,
-                                                    minWidth: '60px',
-                                                    textAlign: 'center'
-                                                }}>
-                                                    {durationMins > 0 ? `${durationMins} min` : '--'}
-                                                </div>
-                                                {breaks.length > 1 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeBreak(index)}
-                                                        style={{
-                                                            padding: '10px', backgroundColor: '#FEE2E2',
-                                                            border: 'none', borderRadius: '8px', cursor: 'pointer'
-                                                        }}
-                                                    >
-                                                        <Trash2 size={16} style={{ color: '#DC2626' }} />
-                                                    </button>
+                                                {breakError && (
+                                                    <p style={{ color: '#DC2626', fontSize: '12px', marginTop: '4px', marginBottom: 0 }}>
+                                                        {breakError}
+                                                    </p>
                                                 )}
                                             </div>
                                         );
@@ -1210,11 +1292,13 @@ export default function AddWorkLogPage() {
                         </button>
                         <button
                             onClick={handleSubmit}
-                            disabled={saving}
+                            disabled={saving || Object.keys(errors).some(k => k.startsWith('break_'))}
                             style={{
-                                padding: '14px 36px', backgroundColor: '#059669', color: 'white',
+                                padding: '14px 36px',
+                                backgroundColor: (saving || Object.keys(errors).some(k => k.startsWith('break_'))) ? '#9CA3AF' : '#059669',
+                                color: 'white',
                                 border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 600,
-                                cursor: saving ? 'not-allowed' : 'pointer',
+                                cursor: (saving || Object.keys(errors).some(k => k.startsWith('break_'))) ? 'not-allowed' : 'pointer',
                                 opacity: saving ? 0.7 : 1,
                             }}
                         >

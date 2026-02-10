@@ -544,6 +544,36 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
         break_end = data.pop('break_end_time', None)
         if break_start and break_end:
             data['breaks'] = [{'start': str(break_start), 'end': str(break_end)}]
+            
+            # Validate that break times fall within work time window
+            if start and end:
+                from datetime import time as dt_time
+                
+                work_start_time = start.time()
+                work_end_time = end.time()
+                is_overnight = end.date() > start.date()
+                
+                # Convert break times to time objects for comparison
+                break_start_time = break_start if isinstance(break_start, dt_time) else dt_time.fromisoformat(str(break_start))
+                break_end_time = break_end if isinstance(break_end, dt_time) else dt_time.fromisoformat(str(break_end))
+                
+                if is_overnight:
+                    # For overnight shifts (e.g., 21:00-05:00):
+                    # Valid break if: break is in evening part [work_start, 23:59] 
+                    #                 OR in morning part [00:00, work_end]
+                    break_in_evening = break_start_time >= work_start_time and break_end_time >= work_start_time
+                    break_in_morning = break_start_time <= work_end_time and break_end_time <= work_end_time
+                    
+                    if not (break_in_evening or break_in_morning):
+                        raise serializers.ValidationError({
+                            'breaks': f'Break time ({break_start_time.strftime("%H:%M")}-{break_end_time.strftime("%H:%M")}) must be within work hours ({work_start_time.strftime("%H:%M")}-{work_end_time.strftime("%H:%M")})'
+                        })
+                else:
+                    # Same-day shift: break must be fully within work window
+                    if break_start_time < work_start_time or break_end_time > work_end_time:
+                        raise serializers.ValidationError({
+                            'breaks': f'Break time ({break_start_time.strftime("%H:%M")}-{break_end_time.strftime("%H:%M")}) must be within work hours ({work_start_time.strftime("%H:%M")}-{work_end_time.strftime("%H:%M")})'
+                        })
         
         return data
 
