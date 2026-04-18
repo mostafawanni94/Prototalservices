@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { DashboardLayout } from '@/components/layout/dashboard';
 import { ArrowLeft, Plus, Gift, Trash2, Coffee, User, Building2, Briefcase, MapPin, Clock, FileText, AlertCircle } from 'lucide-react';
 
@@ -56,6 +56,9 @@ interface Service {
 
 export default function AddWorkLogPage() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const returnUrl = searchParams.get('returnUrl') || '/dashboard/worklogs';
+    const dateParam = searchParams.get('date');
     const [saving, setSaving] = useState(false);
     const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -67,8 +70,14 @@ export default function AddWorkLogPage() {
     const [service, setService] = useState('');
     const [location, setLocation] = useState('');
     const [originalLocation, setOriginalLocation] = useState('');
-    const [startDatetime, setStartDatetime] = useState(new Date().toISOString().slice(0, 16));
-    const [endDatetime, setEndDatetime] = useState(new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16));
+    const [startDatetime, setStartDatetime] = useState(() => {
+        if (dateParam) return `${dateParam}T08:00`;
+        return new Date().toISOString().slice(0, 16);
+    });
+    const [endDatetime, setEndDatetime] = useState(() => {
+        if (dateParam) return `${dateParam}T17:00`;
+        return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16);
+    });
     const [notes, setNotes] = useState('');
     const [breaks, setBreaks] = useState<{ start: string; end: string }[]>([{ start: '12:00', end: '12:30' }]);
     const [allowances, setAllowances] = useState<WorkLogAllowance[]>([]);
@@ -498,7 +507,7 @@ export default function AddWorkLogPage() {
                 if (failCount > 0) {
                     alert(`Created ${successCount} work log(s). ${failCount} failed: ${failedEmployees.join(', ')}`);
                 }
-                router.push('/dashboard/worklogs');
+                router.push(returnUrl);
             } else {
                 setErrors({ general: 'Failed to create any work logs. Please try again.' });
             }
@@ -519,7 +528,7 @@ export default function AddWorkLogPage() {
                 }}>
                     <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
                         <button
-                            onClick={() => router.push('/dashboard/worklogs')}
+                            onClick={() => router.push(returnUrl)}
                             style={{
                                 display: 'flex', alignItems: 'center', gap: '8px',
                                 color: 'rgba(255,255,255,0.7)', background: 'none', border: 'none',

@@ -28,6 +28,7 @@ import {
     isSameDay,
     isToday as isTodayFn,
     getISOWeek,
+    getISOWeekYear,
 } from 'date-fns';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
@@ -419,7 +420,7 @@ export default function WeeklyBoardPage() {
         setLoading(true);
         setError(null);
         try {
-            const year = currentWeekStart.getFullYear();
+            const year = getISOWeekYear(currentWeekStart);
             // getISOWeek gives the correct ISO week number
             const week = getISOWeek(currentWeekStart);
             const response = await api.getWorkEntries({
@@ -598,7 +599,7 @@ export default function WeeklyBoardPage() {
 
     function handleAdd(date: Date) {
         const dateStr = format(date, 'yyyy-MM-dd');
-        router.push(`/dashboard/worklogs/add?date=${dateStr}`);
+        router.push(`/dashboard/worklogs/add?date=${dateStr}&returnUrl=/dashboard/weekly-board`);
     }
 
     /* ========================================================================

@@ -886,6 +886,28 @@ class SurchargeTypeViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(is_active=True)
         return queryset.order_by('sort_order', 'name')
 
+    def perform_destroy(self, instance):
+        """
+        Override destroy to cascade-delete related PROTECT FK records
+        before deleting the surcharge type itself.
+        """
+        from apps.customers.models import (
+            CustomerSurcharge, CustomerServiceSurcharge,
+            CustomerAllowanceSurcharge
+        )
+        # Delete all customer-level surcharge references
+        CustomerSurcharge.objects.filter(surcharge_type=instance).delete()
+        CustomerServiceSurcharge.objects.filter(surcharge_type=instance).delete()
+        CustomerAllowanceSurcharge.objects.filter(surcharge_type=instance).delete()
+        # Delete agency surcharges
+        AgencySurcharge.objects.filter(surcharge_type=instance).delete()
+        # Delete per-service surcharges (on CustomerServiceRate)
+        from apps.customers.models import CustomerServiceSurcharge as _CSR
+        # The first CustomerServiceSurcharge (with customer_service_rate FK) uses same class
+        # but already covered above. Also clear M2M references.
+        instance.customer_allowances_enabled.clear()
+        instance.delete()
+
 
 # =============================================================================
 # ALLOWANCE TYPE VIEWSET (Admin-managed per-hour allowances)

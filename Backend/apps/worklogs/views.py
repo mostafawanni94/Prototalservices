@@ -15,6 +15,7 @@ from .serializers import (
     ShiftSerializer, ShiftCreateSerializer, ShiftFillDataSerializer, ShiftRejectionSerializer,
     WorkEntryListSerializer, WorkEntryDetailSerializer, WorkEntryCreateSerializer,
     WorkEntryFillDataSerializer, WorkEntryApprovalSerializer, WorkEntryRejectionSerializer,
+    WorkEntryBulkCreateSerializer,
 )
 
 
@@ -201,6 +202,16 @@ class WorkEntryViewSet(viewsets.ModelViewSet):
         if project:
             queryset = queryset.filter(project_id=project)
         
+        # Year filter (for calendar views)
+        year = params.get('year')
+        if year:
+            queryset = queryset.filter(work_date__year=int(year))
+        
+        # Work date exact filter
+        work_date = params.get('work_date')
+        if work_date:
+            queryset = queryset.filter(work_date=work_date)
+        
         # Employee filter (for admin)
         employee_ids = params.getlist('employee')
         if employee_ids:
@@ -296,36 +307,69 @@ class WorkEntryViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
     
     def destroy(self, request, *args, **kwargs):
+        """Delete a work entry."""
+        return super().destroy(request, *args, **kwargs)
+    
+    @action(detail=False, methods=['get'])
+    def calendar(self, request):
+        """Lightweight calendar endpoint — returns only dates and counts.
+        
+        Used by the Planning page to show dots/badges on the calendar
+        without loading full work entry details.
+        
+        Query params: project (required), year (optional)
+        Response: {"days": {"2026-02-12": 3, "2026-02-13": 1, ...}}
         """
-        Delete a work entry and its associated planned day if no other entries remain.
+        from django.db.models import Count
         
-        When deleting the last work entry for a shift/date combination,
-        also delete the ProjectPlannedDay to keep the calendar clean.
+        project_id = request.query_params.get('project')
+        if not project_id:
+            return Response({'error': 'project parameter required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        year = request.query_params.get('year', date.today().year)
+        
+        # Get employee filter if provided
+        employee_ids = request.query_params.get('employee')
+        
+        qs = WorkEntry.objects.filter(
+            project_id=project_id,
+            work_date__year=int(year)
+        )
+        
+        if employee_ids:
+            ids = [eid.strip() for eid in employee_ids.split(',') if eid.strip()]
+            qs = qs.filter(employee_id__in=ids)
+        
+        # Group by date and count
+        counts = qs.values('work_date').annotate(count=Count('id')).order_by('work_date')
+        
+        days = {}
+        for row in counts:
+            days[str(row['work_date'])] = row['count']
+        
+        return Response({
+            'days': days,
+            'total_days': len(days),
+        })
+    
+    @action(detail=False, methods=['post'])
+    def bulk_create(self, request):
+        """Create work entries in bulk (used by Planning page schedule).
+        
+        Creates one WorkEntry per employee per date.
         """
-        from apps.projects.models import ProjectPlannedDay
+        serializer = WorkEntryBulkCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+        result = serializer.save()
         
-        instance = self.get_object()
-        shift_template = instance.shift_template
-        work_date = instance.work_date
-        
-        # First delete the work entry
-        response = super().destroy(request, *args, **kwargs)
-        
-        # Then check if there are any other work entries for this shift+date
-        if shift_template and work_date:
-            remaining = WorkEntry.objects.filter(
-                shift_template=shift_template,
-                work_date=work_date
-            ).exists()
-            
-            # If no more entries, delete the planned day too
-            if not remaining:
-                ProjectPlannedDay.objects.filter(
-                    shift_template=shift_template,
-                    date=work_date
-                ).delete()
-        
-        return response
+        return Response({
+            'created_count': len(result['created']),
+            'skipped_count': len(result['skipped']),
+            'skipped': result['skipped'],
+        }, status=status.HTTP_201_CREATED)
     
     # =========================================================================
     # LIST ACTIONS

@@ -600,11 +600,10 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
         if not validated_data.get('work_date'):
             raise serializers.ValidationError({'work_date': 'This field is required.'})
         
-        from apps.projects.models import ProjectPlannedDay, ProjectShiftTemplate
+        from apps.projects.models import ProjectShiftTemplate
         
         template = validated_data.get('shift_template')
         project = validated_data.get('project')
-        work_date = validated_data.get('work_date')
         
         # If no shift template provided, find or create a default "Manual Entry" template
         if not template and project:
@@ -626,71 +625,12 @@ class WorkEntryCreateSerializer(serializers.ModelSerializer):
                 validated_data['planned_start_time'] = template.start_time
             if not validated_data.get('planned_end_time'):
                 validated_data['planned_end_time'] = template.end_time
-            
-            # Create a ProjectPlannedDay if it doesn't exist
-            # This ensures the work entry shows in the Planning calendar
-            if work_date:
-                try:
-                    ProjectPlannedDay.objects.get_or_create(
-                        shift_template=template,
-                        date=work_date,
-                        defaults={
-                            'required_workers': 1,
-                            'supervisor': validated_data.get('planned_supervisor'),
-                        }
-                    )
-                except IntegrityError:
-                    # Race condition: another request already created it — safe to ignore
-                    pass
         
         return super().create(validated_data)
 
     def update(self, instance, validated_data):
-        """
-        Override update to sync ProjectPlannedDay when work_date changes.
-
-        When drag-and-drop moves a work entry to a new date, we need to:
-        1. Create a ProjectPlannedDay for the new date (if it doesn't exist)
-        2. Delete the old ProjectPlannedDay if no other entries remain on that date
-        """
-        from apps.projects.models import ProjectPlannedDay
-
-        old_work_date = instance.work_date
-        new_work_date = validated_data.get('work_date', old_work_date)
-        shift_template = validated_data.get('shift_template', instance.shift_template)
-
-        # Perform the actual update
-        instance = super().update(instance, validated_data)
-
-        # Sync ProjectPlannedDay if work_date changed and entry has a shift template
-        if shift_template and old_work_date and new_work_date and old_work_date != new_work_date:
-            # Create a ProjectPlannedDay for the NEW date
-            try:
-                ProjectPlannedDay.objects.get_or_create(
-                    shift_template=shift_template,
-                    date=new_work_date,
-                    defaults={
-                        'required_workers': 1,
-                        'supervisor': instance.planned_supervisor,
-                    }
-                )
-            except IntegrityError:
-                pass
-
-            # Clean up the OLD date if no other work entries remain there
-            from apps.worklogs.models import WorkEntry
-            remaining_on_old_date = WorkEntry.objects.filter(
-                shift_template=shift_template,
-                work_date=old_work_date,
-            ).exclude(id=instance.id).exists()
-
-            if not remaining_on_old_date:
-                ProjectPlannedDay.objects.filter(
-                    shift_template=shift_template,
-                    date=old_work_date,
-                ).delete()
-
-        return instance
+        """Update a work entry."""
+        return super().update(instance, validated_data)
 
 
 class WorkEntryFillDataSerializer(serializers.Serializer):
@@ -722,3 +662,109 @@ class WorkEntryApprovalSerializer(serializers.Serializer):
 class WorkEntryRejectionSerializer(serializers.Serializer):
     """Serializer for admin to reject work entry."""
     reason = serializers.CharField(min_length=5, max_length=500)
+
+
+class WorkEntryBulkCreateSerializer(serializers.Serializer):
+    """Serializer for bulk creating work entries (used by Planning page).
+
+    Creates one WorkEntry per employee per date.
+    Optionally creates a ProjectShiftTemplate for the batch.
+    """
+    project = serializers.PrimaryKeyRelatedField(
+        queryset=WorkEntry._meta.get_field('project').related_model.objects.all()
+    )
+    dates = serializers.ListField(child=serializers.DateField(), min_length=1)
+    employee_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        min_length=1,
+        help_text="EmployeeProfile UUIDs"
+    )
+    start_time = serializers.TimeField(default='09:00:00')
+    end_time = serializers.TimeField(default='17:00:00')
+    supervisor = serializers.UUIDField(required=False, allow_null=True)
+    service = serializers.IntegerField(required=False, allow_null=True)
+    location_override = serializers.CharField(required=False, allow_blank=True, max_length=500)
+
+    def validate_employee_ids(self, value):
+        profiles = EmployeeProfile.objects.filter(id__in=value)
+        if profiles.count() != len(value):
+            found_ids = {str(p.id) for p in profiles}
+            missing = [str(v) for v in value if str(v) not in found_ids]
+            raise serializers.ValidationError(f"Employees not found: {missing}")
+        return value
+
+    def create(self, validated_data):
+        from apps.projects.models import ProjectShiftTemplate
+        from apps.customers.models import Outfolder, Service
+
+        project = validated_data['project']
+        dates = validated_data['dates']
+        employee_ids = validated_data['employee_ids']
+        start_time = validated_data['start_time']
+        end_time = validated_data['end_time']
+
+        # Find or create a generic shift template for this project
+        template, _ = ProjectShiftTemplate.objects.get_or_create(
+            project=project,
+            name='Manual Entry',
+            defaults={
+                'start_time': start_time,
+                'end_time': end_time,
+                'color': '#6B7280',
+                'is_active': True,
+            }
+        )
+
+        # Resolve supervisor
+        supervisor = None
+        supervisor_id = validated_data.get('supervisor')
+        if supervisor_id:
+            try:
+                supervisor = Outfolder.objects.get(id=supervisor_id)
+            except Outfolder.DoesNotExist:
+                pass
+
+        # Resolve service
+        service = None
+        service_id = validated_data.get('service')
+        if service_id:
+            try:
+                service = Service.objects.get(id=service_id)
+            except Service.DoesNotExist:
+                pass
+
+        location_override = validated_data.get('location_override', '')
+        profiles = {str(p.id): p for p in EmployeeProfile.objects.filter(id__in=employee_ids)}
+
+        created_entries = []
+        skipped = []
+
+        for work_date in dates:
+            for emp_id in employee_ids:
+                profile = profiles.get(str(emp_id))
+                if not profile:
+                    continue
+
+                # Skip if already assigned
+                if WorkEntry.objects.filter(
+                    employee=profile, work_date=work_date, project=project
+                ).exists():
+                    skipped.append({'employee': profile.full_name, 'date': str(work_date)})
+                    continue
+
+                entry = WorkEntry.objects.create(
+                    employee=profile,
+                    project=project,
+                    shift_template=template,
+                    work_date=work_date,
+                    planned_start_time=start_time,
+                    planned_end_time=end_time,
+                    planned_supervisor=supervisor,
+                    service=service,
+                    location_override=location_override,
+                    status='planned',
+                    created_by=self.context['request'].user,
+                )
+                created_entries.append(entry)
+
+        return {'created': created_entries, 'skipped': skipped}
