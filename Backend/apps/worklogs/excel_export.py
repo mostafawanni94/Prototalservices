@@ -465,15 +465,13 @@ def generate_customer_excel_export(
                 except (ValueError, TypeError):
                     pass
         
-        # Calculate Regulieredienst and Ploegendiensturen using either/or logic
-        # Check if ANY surcharge hours exist (night, weekend, holiday, overtime)
-        has_surcharge_hours = (night_hours + weekend_hours + holiday_hours + overtime_hours) > 0
+        # Calculate Regulieredienst and Ploegendiensturen
+        # Ploegendiensturen = sum of all surcharge hours (hours that have toslagen)
+        # Regulieredienst = remaining normal hours (no surcharge applied)
+        surcharge_hours_total = night_hours + weekend_hours + holiday_hours + overtime_hours
         
-        # Either/or logic:
-        # - Regulieredienst = total_hours if ONLY normal hours worked (no surcharges), else 0
-        # - Ploegendiensturen = total_hours if ANY surcharge hours worked, else 0
-        regulieredienst_hours = total_hours if not has_surcharge_hours else 0
-        ploegendienst_hours = total_hours if has_surcharge_hours else 0
+        regulieredienst_hours = normal_hours  # Hours without any surcharge
+        ploegendienst_hours = surcharge_hours_total  # Only hours that carry a surcharge
         
         if export_type == 'hr':
             # HR layout: J=Reguliere, K=Ploegendienst, L=Normaal, M=Night, N=Weekend, O=Holiday, P=Overtime, Q=Sleep, R=Toeslagen, S=TOTAAL

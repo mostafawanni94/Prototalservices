@@ -1136,7 +1136,7 @@ class WorkEntry(BaseModel):
                     result['normal_hours'] -= hours
                 elif category == 'overtime' or 'overwerk' in name.lower():
                     result['overtime_hours'] = round(hours, 2)
-                    # Don't subtract from normal for overtime
+                    result['normal_hours'] -= hours
         
         result['normal_hours'] = max(0, round(result['normal_hours'], 2))
         

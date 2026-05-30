@@ -84,6 +84,8 @@ export default function SurchargeTypesPage() {
         min_hours_threshold: '' as string | number,
         is_active: true,
         sort_order: 0,
+        weekend_start_day: 4 as number, // Friday
+        weekend_end_day: 0 as number,   // Monday
     });
 
     // Load surcharge types from API
@@ -139,6 +141,16 @@ export default function SurchargeTypesPage() {
     // Open modal for add/edit
     const openModal = (type?: SurchargeType) => {
         if (type) {
+            // For weekend types, extract start/end day from days_of_week
+            let weekendStartDay = 4; // Friday default
+            let weekendEndDay = 0;   // Monday default
+            if (type.category === 'weekend' && type.days_of_week?.length > 0) {
+                // The start day is the day before the first weekend day (e.g., Sat=5 → start=Fri=4)
+                const sortedDays = [...type.days_of_week].sort((a, b) => a - b);
+                weekendStartDay = sortedDays[0] > 0 ? sortedDays[0] - 1 : 6;
+                // The end day is the day after the last weekend day (e.g., Sun=6 → end=Mon=0)
+                weekendEndDay = sortedDays[sortedDays.length - 1] < 6 ? sortedDays[sortedDays.length - 1] + 1 : 0;
+            }
             setEditingType(type);
             setFormData({
                 name: type.name,
@@ -151,6 +163,8 @@ export default function SurchargeTypesPage() {
                 min_hours_threshold: type.min_hours_threshold || '',
                 is_active: type.is_active,
                 sort_order: type.sort_order,
+                weekend_start_day: weekendStartDay,
+                weekend_end_day: weekendEndDay,
             });
         } else {
             setEditingType(null);
@@ -165,9 +179,25 @@ export default function SurchargeTypesPage() {
                 min_hours_threshold: '',
                 is_active: true,
                 sort_order: typesList.length + 1,
+                weekend_start_day: 4,
+                weekend_end_day: 0,
             });
         }
         setIsModalOpen(true);
+    };
+
+    // Helper: compute days_of_week from weekend start/end day
+    const getWeekendDays = (startDay: number, endDay: number): number[] => {
+        // Generate the days between start and end (the actual weekend days)
+        // Start day is e.g. Friday (4), meaning the weekend surcharge starts on Friday evening
+        // The full weekend days are after startDay and before endDay
+        const days: number[] = [];
+        let current = (startDay + 1) % 7;
+        while (current !== endDay) {
+            days.push(current);
+            current = (current + 1) % 7;
+        }
+        return days;
     };
 
     // Save surcharge type
@@ -178,11 +208,24 @@ export default function SurchargeTypesPage() {
                 : `${API_URL}/employees/surcharge-types/`;
             const method = editingType ? 'PUT' : 'POST';
 
+            // Build payload — convert weekend fields to model fields
+            let daysOfWeek = formData.days_of_week;
+            if (formData.category === 'weekend') {
+                daysOfWeek = getWeekendDays(formData.weekend_start_day, formData.weekend_end_day);
+            }
+
             const payload = {
-                ...formData,
+                name: formData.name,
+                category: formData.category,
+                description: formData.description,
                 time_from: formData.time_from || null,
                 time_to: formData.time_to || null,
+                days_of_week: daysOfWeek,
+                // Only holiday and custom categories use specific_dates
+                specific_dates: (formData.category === 'holiday' || formData.category === 'custom') ? formData.specific_dates : [],
                 min_hours_threshold: formData.min_hours_threshold ? parseFloat(String(formData.min_hours_threshold)) : null,
+                is_active: formData.is_active,
+                sort_order: formData.sort_order,
             };
 
             console.log('Saving surcharge type:', { url, method, payload });
@@ -618,7 +661,7 @@ export default function SurchargeTypesPage() {
                                 backgroundColor: 'white',
                                 borderRadius: '20px',
                                 width: '100%',
-                                maxWidth: '560px',
+                                maxWidth: '640px',
                                 maxHeight: '90vh',
                                 overflow: 'auto',
                                 boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
@@ -652,27 +695,54 @@ export default function SurchargeTypesPage() {
 
                             {/* Modal Body */}
                             <div style={{ padding: '24px' }}>
-                                {/* Name & Category */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-                                    <div>
-                                        <label style={labelStyle}>Name *</label>
-                                        <input
-                                            type="text"
-                                            value={formData.name}
-                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                            placeholder="e.g. Weekend"
-                                            style={inputStyle}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Category</label>
-                                        <select
-                                            value={formData.category}
-                                            onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                                            style={inputStyle}
-                                        >
-                                            {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                        </select>
+                                {/* Name */}
+                                <div style={{ marginBottom: '20px' }}>
+                                    <label style={labelStyle}>Name *</label>
+                                    <input
+                                        type="text"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder="e.g. Weekend, Night Shift"
+                                        style={inputStyle}
+                                    />
+                                </div>
+
+                                {/* Category Cards */}
+                                <div style={{ marginBottom: '24px' }}>
+                                    <label style={labelStyle}>Category</label>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '10px' }}>
+                                        {CATEGORIES.map(cat => {
+                                            const CatIcon = cat.icon;
+                                            const isSelected = formData.category === cat.value;
+                                            return (
+                                                <button
+                                                    key={cat.value}
+                                                    type="button"
+                                                    onClick={() => setFormData({ ...formData, category: cat.value })}
+                                                    style={{
+                                                        display: 'flex',
+                                                        flexDirection: 'column',
+                                                        alignItems: 'center',
+                                                        gap: '8px',
+                                                        padding: '14px 8px',
+                                                        borderRadius: '12px',
+                                                        border: isSelected ? `2px solid ${cat.color}` : '2px solid #E5E7EB',
+                                                        backgroundColor: isSelected ? `${cat.color}12` : 'white',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.15s ease',
+                                                    }}
+                                                >
+                                                    <CatIcon size={22} color={isSelected ? cat.color : '#9CA3AF'} />
+                                                    <span style={{
+                                                        fontSize: '12px',
+                                                        fontWeight: isSelected ? 600 : 500,
+                                                        color: isSelected ? cat.color : '#6B7280',
+                                                    }}>
+                                                        {cat.label}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
                                     </div>
                                 </div>
 
@@ -688,16 +758,322 @@ export default function SurchargeTypesPage() {
                                     />
                                 </div>
 
-                                {/* Min Hours Threshold (for Overtime) */}
-                                {(formData.category === 'overtime' || formData.category === 'custom') && (
-                                    <div style={{ marginBottom: '20px' }}>
-                                        <label style={labelStyle}>
-                                            Minimum Hours Threshold (Overwerk)
-                                            <span style={{ color: '#6B7280', fontWeight: 400, marginLeft: '6px' }}>
-                                                Surcharge applies only to hours above this threshold
+                                {/* ===== WEEKEND CONFIGURATION ===== */}
+                                {formData.category === 'weekend' && (
+                                    <div style={{
+                                        padding: '20px',
+                                        backgroundColor: '#FFFBEB',
+                                        borderRadius: '14px',
+                                        border: '1px solid #FDE68A',
+                                        marginBottom: '20px',
+                                    }}>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#92400E', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Sun size={18} color="#F59E0B" /> Weekend Window
+                                        </h3>
+
+                                        {/* Starts */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 1fr', gap: '12px', alignItems: 'center', marginBottom: '12px' }}>
+                                            <span style={{ fontSize: '14px', fontWeight: 500, color: '#92400E' }}>Starts</span>
+                                            <select
+                                                value={formData.weekend_start_day}
+                                                onChange={(e) => setFormData({ ...formData, weekend_start_day: parseInt(e.target.value) })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            >
+                                                {DAYS.map((day, i) => (
+                                                    <option key={i} value={i}>{day}</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="time"
+                                                value={formData.time_from}
+                                                onChange={(e) => setFormData({ ...formData, time_from: e.target.value })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            />
+                                        </div>
+
+                                        {/* Ends */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '70px 1fr 1fr', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+                                            <span style={{ fontSize: '14px', fontWeight: 500, color: '#92400E' }}>Ends</span>
+                                            <select
+                                                value={formData.weekend_end_day}
+                                                onChange={(e) => setFormData({ ...formData, weekend_end_day: parseInt(e.target.value) })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            >
+                                                {DAYS.map((day, i) => (
+                                                    <option key={i} value={i}>{day}</option>
+                                                ))}
+                                            </select>
+                                            <input
+                                                type="time"
+                                                value={formData.time_to}
+                                                onChange={(e) => setFormData({ ...formData, time_to: e.target.value })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            />
+                                        </div>
+
+                                        {/* Visual Timeline */}
+                                        <div style={{ padding: '12px 0' }}>
+                                            <div style={{ display: 'flex', height: '32px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #FDE68A' }}>
+                                                {DAYS.map((day, i) => {
+                                                    const startDay = formData.weekend_start_day;
+                                                    const endDay = formData.weekend_end_day;
+                                                    // Calculate which days are "in" the weekend
+                                                    let isInWeekend = false;
+                                                    if (startDay < endDay) {
+                                                        isInWeekend = i > startDay && i < endDay;
+                                                    } else {
+                                                        isInWeekend = i > startDay || i < endDay;
+                                                    }
+                                                    const isPartialStart = i === startDay;
+                                                    const isPartialEnd = i === endDay;
+                                                    return (
+                                                        <div
+                                                            key={i}
+                                                            style={{
+                                                                flex: 1,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                fontSize: '11px',
+                                                                fontWeight: 600,
+                                                                color: isInWeekend ? 'white' : isPartialStart || isPartialEnd ? '#92400E' : '#9CA3AF',
+                                                                background: isInWeekend ? '#F59E0B' : isPartialStart ? 'linear-gradient(90deg, #FEF3C7 50%, #F59E0B 50%)' : isPartialEnd ? 'linear-gradient(90deg, #F59E0B 50%, #FEF3C7 50%)' : '#FEF3C7',
+                                                                borderRight: i < 6 ? '1px solid #FDE68A' : 'none',
+                                                            }}
+                                                        >
+                                                            {day}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                                                <span style={{ fontSize: '11px', color: '#92400E', fontWeight: 500 }}>
+                                                    {DAYS[formData.weekend_start_day]} {formData.time_from || '--:--'}
+                                                </span>
+                                                <span style={{ fontSize: '11px', color: '#92400E', fontWeight: 500 }}>
+                                                    {DAYS[formData.weekend_end_day]} {formData.time_to || '--:--'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px', padding: '10px 12px', backgroundColor: '#FEF3C7', borderRadius: '8px' }}>
+                                            <Clock size={14} color="#92400E" />
+                                            <span style={{ fontSize: '12px', color: '#92400E' }}>
+                                                All hours between {DAYS[formData.weekend_start_day]} {formData.time_from || '--:--'} and {DAYS[formData.weekend_end_day]} {formData.time_to || '--:--'} will receive weekend surcharge
                                             </span>
-                                        </label>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ===== NIGHT SHIFT CONFIGURATION ===== */}
+                                {formData.category === 'night_shift' && (
+                                    <div style={{
+                                        padding: '20px',
+                                        backgroundColor: '#EFF6FF',
+                                        borderRadius: '14px',
+                                        border: '1px solid #BFDBFE',
+                                        marginBottom: '20px',
+                                    }}>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#1E40AF', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Moon size={18} color="#3B82F6" /> Night Shift Configuration
+                                        </h3>
+
+                                        {/* Time Window */}
+                                        <label style={{ ...labelStyle, color: '#1E40AF' }}>Time Window</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+                                            <input
+                                                type="time"
+                                                value={formData.time_from}
+                                                onChange={(e) => setFormData({ ...formData, time_from: e.target.value })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            />
+                                            <span style={{ fontSize: '16px', color: '#6B7280', fontWeight: 500 }}>→</span>
+                                            <input
+                                                type="time"
+                                                value={formData.time_to}
+                                                onChange={(e) => setFormData({ ...formData, time_to: e.target.value })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            />
+                                        </div>
+
+                                        {/* Active Days */}
+                                        <label style={{ ...labelStyle, color: '#1E40AF' }}>Active Days</label>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            {DAYS.map((day, i) => (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    onClick={() => toggleDay(i)}
+                                                    style={{
+                                                        padding: '8px 14px',
+                                                        fontSize: '13px',
+                                                        fontWeight: 500,
+                                                        color: formData.days_of_week.includes(i) ? 'white' : '#6B7280',
+                                                        backgroundColor: formData.days_of_week.includes(i) ? '#3B82F6' : 'white',
+                                                        border: formData.days_of_week.includes(i) ? '1px solid #3B82F6' : '1px solid #E5E7EB',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.15s ease',
+                                                    }}
+                                                >
+                                                    {day}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        <p style={{ fontSize: '12px', color: '#3B82F6', marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            <Clock size={12} /> Night shift applies on selected days only (exclude weekend days if separate)
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* ===== HOLIDAY CONFIGURATION ===== */}
+                                {formData.category === 'holiday' && (
+                                    <div style={{
+                                        padding: '20px',
+                                        backgroundColor: '#ECFDF5',
+                                        borderRadius: '14px',
+                                        border: '1px solid #A7F3D0',
+                                        marginBottom: '20px',
+                                    }}>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#065F46', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Star size={18} color="#10B981" /> Holiday Configuration
+                                        </h3>
+
+                                        {/* Time Window (optional) */}
+                                        <label style={{ ...labelStyle, color: '#065F46' }}>Time Window <span style={{ fontWeight: 400, fontSize: '12px' }}>(leave empty for all day)</span></label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+                                            <input
+                                                type="time"
+                                                value={formData.time_from}
+                                                onChange={(e) => setFormData({ ...formData, time_from: e.target.value })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            />
+                                            <span style={{ fontSize: '16px', color: '#6B7280', fontWeight: 500 }}>→</span>
+                                            <input
+                                                type="time"
+                                                value={formData.time_to}
+                                                onChange={(e) => setFormData({ ...formData, time_to: e.target.value })}
+                                                style={{ ...inputStyle, backgroundColor: 'white' }}
+                                            />
+                                        </div>
+
+                                        {/* Holiday Dates */}
+                                        <label style={{ ...labelStyle, color: '#065F46' }}>Holiday Dates</label>
+                                        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const allDates = NL_PUBLIC_HOLIDAYS.map(h => h.date);
+                                                    setFormData(f => ({ ...f, specific_dates: allDates }));
+                                                }}
+                                                style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 500, color: '#10B981', backgroundColor: '#D1FAE5', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                            >
+                                                Select All
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFormData(f => ({ ...f, specific_dates: [] }))}
+                                                style={{ padding: '6px 12px', fontSize: '12px', fontWeight: 500, color: '#6B7280', backgroundColor: '#F3F4F6', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                            >
+                                                Clear All
+                                            </button>
+                                        </div>
+                                        <div style={{
+                                            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px',
+                                            maxHeight: '200px', overflowY: 'auto', padding: '12px',
+                                            backgroundColor: 'white', borderRadius: '10px', border: '1px solid #A7F3D0',
+                                        }}>
+                                            {NL_PUBLIC_HOLIDAYS.map(holiday => (
+                                                <label
+                                                    key={holiday.date}
+                                                    style={{
+                                                        display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer',
+                                                        padding: '6px 8px', borderRadius: '6px',
+                                                        backgroundColor: formData.specific_dates.includes(holiday.date) ? '#D1FAE5' : 'transparent',
+                                                    }}
+                                                >
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={formData.specific_dates.includes(holiday.date)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setFormData(f => ({ ...f, specific_dates: [...f.specific_dates, holiday.date] }));
+                                                            } else {
+                                                                setFormData(f => ({ ...f, specific_dates: f.specific_dates.filter(d => d !== holiday.date) }));
+                                                            }
+                                                        }}
+                                                        style={{ width: '16px', height: '16px' }}
+                                                    />
+                                                    <span style={{ fontSize: '12px', color: '#374151' }}>
+                                                        <strong>{holiday.date}</strong> — {holiday.name}
+                                                    </span>
+                                                </label>
+                                            ))}
+                                        </div>
+
+                                        {/* Custom Date Adding */}
+                                        <div style={{ marginTop: '12px' }}>
+                                            {!showCustomDateForm ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowCustomDateForm(true)}
+                                                    style={{ fontSize: '13px', color: '#10B981', background: 'none', border: 'none', cursor: 'pointer' }}
+                                                >
+                                                    + Add Custom Date
+                                                </button>
+                                            ) : (
+                                                <div style={{ padding: '12px', backgroundColor: 'white', borderRadius: '10px', border: '1px solid #A7F3D0' }}>
+                                                    <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
+                                                        <div>
+                                                            <label style={{ fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>Month</label>
+                                                            <select value={customDateMonth} onChange={(e) => setCustomDateMonth(e.target.value)} style={{ display: 'block', padding: '8px', fontSize: '13px', border: '1px solid #E5E7EB', borderRadius: '8px', marginTop: '4px' }}>
+                                                                {['01-Jan', '02-Feb', '03-Mar', '04-Apr', '05-May', '06-Jun', '07-Jul', '08-Aug', '09-Sep', '10-Oct', '11-Nov', '12-Dec'].map(m => (
+                                                                    <option key={m.split('-')[0]} value={m.split('-')[0]}>{m}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label style={{ fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>Day</label>
+                                                            <select value={customDateDay} onChange={(e) => setCustomDateDay(e.target.value)} style={{ display: 'block', padding: '8px', fontSize: '13px', border: '1px solid #E5E7EB', borderRadius: '8px', marginTop: '4px' }}>
+                                                                {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0')).map(d => (
+                                                                    <option key={d} value={d}>{d}</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <button type="button" onClick={addSpecificDate} style={{ padding: '8px 14px', fontSize: '13px', fontWeight: 500, color: 'white', backgroundColor: '#10B981', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Add</button>
+                                                        <button type="button" onClick={() => setShowCustomDateForm(false)} style={{ padding: '8px 14px', fontSize: '13px', fontWeight: 500, color: '#6B7280', backgroundColor: '#F3F4F6', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {formData.specific_dates.filter(d => !NL_PUBLIC_HOLIDAYS.some(h => h.date === d)).length > 0 && (
+                                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                                                    {formData.specific_dates.filter(d => !NL_PUBLIC_HOLIDAYS.some(h => h.date === d)).map(date => (
+                                                        <span key={date} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '12px', fontWeight: 500, color: '#10B981', backgroundColor: '#D1FAE5', borderRadius: '6px' }}>
+                                                            {date}
+                                                            <button onClick={() => removeSpecificDate(date)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#10B981', padding: 0, fontSize: '14px' }}>×</button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ===== OVERTIME CONFIGURATION ===== */}
+                                {formData.category === 'overtime' && (
+                                    <div style={{
+                                        padding: '20px',
+                                        backgroundColor: '#FEF2F2',
+                                        borderRadius: '14px',
+                                        border: '1px solid #FECACA',
+                                        marginBottom: '20px',
+                                    }}>
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#991B1B', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Hourglass size={18} color="#EF4444" /> Overtime Configuration
+                                        </h3>
+
+                                        <label style={{ ...labelStyle, color: '#991B1B' }}>Minimum Hours Threshold</label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
                                             <input
                                                 type="number"
                                                 step="0.5"
@@ -705,311 +1081,95 @@ export default function SurchargeTypesPage() {
                                                 value={formData.min_hours_threshold}
                                                 onChange={(e) => setFormData({ ...formData, min_hours_threshold: e.target.value })}
                                                 placeholder="e.g. 9"
-                                                style={{ ...inputStyle, width: '120px' }}
+                                                style={{ ...inputStyle, width: '120px', backgroundColor: 'white' }}
                                             />
-                                            <span style={{ color: '#6B7280', fontSize: '13px' }}>
-                                                hours per day
-                                            </span>
+                                            <span style={{ color: '#991B1B', fontSize: '13px' }}>hours per day</span>
                                         </div>
-                                        <p style={{ fontSize: '12px', color: '#9CA3AF', marginTop: '6px' }}>
+                                        <p style={{ fontSize: '12px', color: '#B91C1C', marginTop: '6px' }}>
                                             Example: If set to 9, an employee working 10 hours gets 1 hour of overtime surcharge.
                                         </p>
+
+                                        {/* Active Days */}
+                                        <label style={{ ...labelStyle, color: '#991B1B', marginTop: '16px' }}>Active Days</label>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            {DAYS.map((day, i) => (
+                                                <button
+                                                    key={i}
+                                                    type="button"
+                                                    onClick={() => toggleDay(i)}
+                                                    style={{
+                                                        padding: '8px 14px',
+                                                        fontSize: '13px',
+                                                        fontWeight: 500,
+                                                        color: formData.days_of_week.includes(i) ? 'white' : '#6B7280',
+                                                        backgroundColor: formData.days_of_week.includes(i) ? '#EF4444' : 'white',
+                                                        border: formData.days_of_week.includes(i) ? '1px solid #EF4444' : '1px solid #E5E7EB',
+                                                        borderRadius: '8px',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.15s ease',
+                                                    }}
+                                                >
+                                                    {day}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
 
-                                {/* Days of Week */}
-                                <div style={{ marginBottom: '20px' }}>
-                                    <label style={labelStyle}>Days of Week</label>
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                        {DAYS.map((day, i) => (
-                                            <button
-                                                key={i}
-                                                type="button"
-                                                onClick={() => toggleDay(i)}
-                                                style={{
-                                                    padding: '8px 12px',
-                                                    fontSize: '13px',
-                                                    fontWeight: 500,
-                                                    color: formData.days_of_week.includes(i) ? 'white' : '#6B7280',
-                                                    backgroundColor: formData.days_of_week.includes(i) ? '#8B5CF6' : '#F3F4F6',
-                                                    border: 'none',
-                                                    borderRadius: '8px',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.15s ease',
-                                                }}
-                                            >
-                                                {day}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Time Range */}
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' }}>
-                                    <div>
-                                        <label style={labelStyle}>Time From</label>
-                                        <input
-                                            type="time"
-                                            value={formData.time_from}
-                                            onChange={(e) => setFormData({ ...formData, time_from: e.target.value })}
-                                            style={inputStyle}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label style={labelStyle}>Time To</label>
-                                        <input
-                                            type="time"
-                                            value={formData.time_to}
-                                            onChange={(e) => setFormData({ ...formData, time_to: e.target.value })}
-                                            style={inputStyle}
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Specific Dates - NL Public Holidays */}
-                                <div style={{ marginBottom: '20px' }}>
-                                    <label style={labelStyle}>Public Holidays (Select dates this surcharge applies to)</label>
-
-                                    {/* Quick Actions */}
-                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                const allDates = NL_PUBLIC_HOLIDAYS.map(h => h.date);
-                                                setFormData(f => ({ ...f, specific_dates: allDates }));
-                                            }}
-                                            style={{
-                                                padding: '6px 12px',
-                                                fontSize: '12px',
-                                                fontWeight: 500,
-                                                color: '#10B981',
-                                                backgroundColor: '#D1FAE5',
-                                                border: 'none',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            Select All Holidays
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormData(f => ({ ...f, specific_dates: [] }))}
-                                            style={{
-                                                padding: '6px 12px',
-                                                fontSize: '12px',
-                                                fontWeight: 500,
-                                                color: '#6B7280',
-                                                backgroundColor: '#F3F4F6',
-                                                border: 'none',
-                                                borderRadius: '6px',
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            Clear All
-                                        </button>
-                                    </div>
-
-                                    {/* Holiday Checkboxes */}
+                                {/* ===== CUSTOM CONFIGURATION (all fields) ===== */}
+                                {formData.category === 'custom' && (
                                     <div style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: '1fr 1fr',
-                                        gap: '8px',
-                                        maxHeight: '200px',
-                                        overflowY: 'auto',
-                                        padding: '12px',
-                                        backgroundColor: '#F9FAFB',
-                                        borderRadius: '10px',
-                                        border: '1px solid #E5E7EB',
+                                        padding: '20px',
+                                        backgroundColor: '#F5F3FF',
+                                        borderRadius: '14px',
+                                        border: '1px solid #DDD6FE',
+                                        marginBottom: '20px',
                                     }}>
-                                        {NL_PUBLIC_HOLIDAYS.map(holiday => (
-                                            <label
-                                                key={holiday.date}
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    gap: '8px',
-                                                    cursor: 'pointer',
-                                                    padding: '6px 8px',
-                                                    borderRadius: '6px',
-                                                    backgroundColor: formData.specific_dates.includes(holiday.date) ? '#D1FAE5' : 'transparent',
-                                                }}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={formData.specific_dates.includes(holiday.date)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setFormData(f => ({ ...f, specific_dates: [...f.specific_dates, holiday.date] }));
-                                                        } else {
-                                                            setFormData(f => ({ ...f, specific_dates: f.specific_dates.filter(d => d !== holiday.date) }));
-                                                        }
-                                                    }}
-                                                    style={{ width: '16px', height: '16px' }}
-                                                />
-                                                <span style={{ fontSize: '12px', color: '#374151' }}>
-                                                    <strong>{holiday.date}</strong> - {holiday.name}
-                                                </span>
-                                            </label>
-                                        ))}
+                                        <h3 style={{ fontSize: '15px', fontWeight: 600, color: '#5B21B6', margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <Calendar size={18} color="#8B5CF6" /> Custom Configuration
+                                        </h3>
+
+                                        {/* Time */}
+                                        <label style={{ ...labelStyle, color: '#5B21B6' }}>Time Window</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: '12px', alignItems: 'center', marginBottom: '16px' }}>
+                                            <input type="time" value={formData.time_from} onChange={(e) => setFormData({ ...formData, time_from: e.target.value })} style={{ ...inputStyle, backgroundColor: 'white' }} />
+                                            <span style={{ fontSize: '16px', color: '#6B7280' }}>→</span>
+                                            <input type="time" value={formData.time_to} onChange={(e) => setFormData({ ...formData, time_to: e.target.value })} style={{ ...inputStyle, backgroundColor: 'white' }} />
+                                        </div>
+
+                                        {/* Days */}
+                                        <label style={{ ...labelStyle, color: '#5B21B6' }}>Days of Week</label>
+                                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' }}>
+                                            {DAYS.map((day, i) => (
+                                                <button key={i} type="button" onClick={() => toggleDay(i)} style={{
+                                                    padding: '8px 14px', fontSize: '13px', fontWeight: 500,
+                                                    color: formData.days_of_week.includes(i) ? 'white' : '#6B7280',
+                                                    backgroundColor: formData.days_of_week.includes(i) ? '#8B5CF6' : 'white',
+                                                    border: formData.days_of_week.includes(i) ? '1px solid #8B5CF6' : '1px solid #E5E7EB',
+                                                    borderRadius: '8px', cursor: 'pointer', transition: 'all 0.15s ease',
+                                                }}>{day}</button>
+                                            ))}
+                                        </div>
+
+                                        {/* Threshold */}
+                                        <label style={{ ...labelStyle, color: '#5B21B6' }}>Min Hours Threshold (optional)</label>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                                            <input type="number" step="0.5" min="0" value={formData.min_hours_threshold} onChange={(e) => setFormData({ ...formData, min_hours_threshold: e.target.value })} placeholder="e.g. 9" style={{ ...inputStyle, width: '120px', backgroundColor: 'white' }} />
+                                            <span style={{ color: '#5B21B6', fontSize: '13px' }}>hours per day</span>
+                                        </div>
+
+                                        {/* Holidays */}
+                                        <label style={{ ...labelStyle, color: '#5B21B6' }}>Specific Dates</label>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', maxHeight: '160px', overflowY: 'auto', padding: '10px', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #DDD6FE' }}>
+                                            {NL_PUBLIC_HOLIDAYS.map(holiday => (
+                                                <label key={holiday.date} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', padding: '4px 6px', borderRadius: '6px', backgroundColor: formData.specific_dates.includes(holiday.date) ? '#EDE9FE' : 'transparent' }}>
+                                                    <input type="checkbox" checked={formData.specific_dates.includes(holiday.date)} onChange={(e) => { if (e.target.checked) { setFormData(f => ({ ...f, specific_dates: [...f.specific_dates, holiday.date] })); } else { setFormData(f => ({ ...f, specific_dates: f.specific_dates.filter(d => d !== holiday.date) })); } }} style={{ width: '14px', height: '14px' }} />
+                                                    <span style={{ fontSize: '11px', color: '#374151' }}><strong>{holiday.date}</strong> — {holiday.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
                                     </div>
-
-                                    {/* Custom Date */}
-                                    <div style={{ marginTop: '12px' }}>
-                                        {!showCustomDateForm ? (
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowCustomDateForm(true)}
-                                                style={{
-                                                    fontSize: '13px',
-                                                    color: '#8B5CF6',
-                                                    background: 'none',
-                                                    border: 'none',
-                                                    cursor: 'pointer',
-                                                }}
-                                            >
-                                                + Add Custom Date
-                                            </button>
-                                        ) : (
-                                            <div style={{
-                                                padding: '16px',
-                                                backgroundColor: '#F9FAFB',
-                                                borderRadius: '10px',
-                                                border: '1px solid #E5E7EB',
-                                            }}>
-                                                <p style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '12px' }}>
-                                                    Add Custom Date
-                                                </p>
-                                                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
-                                                    <div>
-                                                        <label style={{ fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>Month</label>
-                                                        <select
-                                                            value={customDateMonth}
-                                                            onChange={(e) => setCustomDateMonth(e.target.value)}
-                                                            style={{
-                                                                display: 'block',
-                                                                padding: '8px 12px',
-                                                                fontSize: '14px',
-                                                                border: '1px solid #E5E7EB',
-                                                                borderRadius: '8px',
-                                                                marginTop: '4px',
-                                                            }}
-                                                        >
-                                                            {['01-Jan', '02-Feb', '03-Mar', '04-Apr', '05-May', '06-Jun', '07-Jul', '08-Aug', '09-Sep', '10-Oct', '11-Nov', '12-Dec'].map(m => (
-                                                                <option key={m.split('-')[0]} value={m.split('-')[0]}>{m}</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                    <div>
-                                                        <label style={{ fontSize: '11px', color: '#6B7280', fontWeight: 500 }}>Day</label>
-                                                        <select
-                                                            value={customDateDay}
-                                                            onChange={(e) => setCustomDateDay(e.target.value)}
-                                                            style={{
-                                                                display: 'block',
-                                                                padding: '8px 12px',
-                                                                fontSize: '14px',
-                                                                border: '1px solid #E5E7EB',
-                                                                borderRadius: '8px',
-                                                                marginTop: '4px',
-                                                            }}
-                                                        >
-                                                            {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, '0')).map(d => (
-                                                                <option key={d} value={d}>{d}</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={addSpecificDate}
-                                                        style={{
-                                                            padding: '8px 16px',
-                                                            fontSize: '13px',
-                                                            fontWeight: 500,
-                                                            color: 'white',
-                                                            backgroundColor: '#8B5CF6',
-                                                            border: 'none',
-                                                            borderRadius: '8px',
-                                                            cursor: 'pointer',
-                                                        }}
-                                                    >
-                                                        Add
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowCustomDateForm(false)}
-                                                        style={{
-                                                            padding: '8px 16px',
-                                                            fontSize: '13px',
-                                                            fontWeight: 500,
-                                                            color: '#6B7280',
-                                                            backgroundColor: '#F3F4F6',
-                                                            border: 'none',
-                                                            borderRadius: '8px',
-                                                            cursor: 'pointer',
-                                                        }}
-                                                    >
-                                                        Cancel
-                                                    </button>
-                                                </div>
-                                                <p style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '8px' }}>
-                                                    Preview: {customDateMonth}-{customDateDay}
-                                                </p>
-                                            </div>
-                                        )}
-
-                                        {/* Show custom dates (non-holiday) */}
-                                        {formData.specific_dates.filter(d => !NL_PUBLIC_HOLIDAYS.some(h => h.date === d)).length > 0 && (
-                                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '8px' }}>
-                                                {formData.specific_dates.filter(d => !NL_PUBLIC_HOLIDAYS.some(h => h.date === d)).map(date => (
-                                                    <span key={date} style={{
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: '4px',
-                                                        padding: '4px 8px',
-                                                        fontSize: '12px',
-                                                        fontWeight: 500,
-                                                        color: '#8B5CF6',
-                                                        backgroundColor: '#EDE9FE',
-                                                        borderRadius: '6px',
-                                                    }}>
-                                                        {date}
-                                                        <button
-                                                            onClick={() => removeSpecificDate(date)}
-                                                            style={{
-                                                                background: 'none',
-                                                                border: 'none',
-                                                                cursor: 'pointer',
-                                                                color: '#8B5CF6',
-                                                                padding: 0,
-                                                                fontSize: '14px',
-                                                            }}
-                                                        >
-                                                            ×
-                                                        </button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Help Text */}
-                                <div style={{
-                                    padding: '12px 16px',
-                                    backgroundColor: '#EFF6FF',
-                                    borderRadius: '10px',
-                                    border: '1px solid #BFDBFE',
-                                    marginBottom: '20px',
-                                }}>
-                                    <p style={{ fontSize: '13px', color: '#1D4ED8', margin: 0, fontWeight: 500 }}>
-                                        💡 How to set up holiday surcharges:
-                                    </p>
-                                    <ul style={{ fontSize: '12px', color: '#3B82F6', margin: '8px 0 0', paddingLeft: '20px' }}>
-                                        <li><strong>Morning Holiday Rate:</strong> Select holidays + set time 07:00-18:00</li>
-                                        <li><strong>Night Holiday Rate:</strong> Select same holidays + set time 18:00-07:00</li>
-                                        <li><strong>All-day Holiday Rate:</strong> Select holidays, leave time empty</li>
-                                    </ul>
-                                </div>
+                                )}
 
                                 {/* Active Toggle */}
                                 <div style={{ marginBottom: '24px' }}>
