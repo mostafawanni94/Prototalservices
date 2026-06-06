@@ -5,7 +5,7 @@ from django.contrib.auth.hashers import make_password
 
 def create_default_admin(apps, schema_editor):
     User = apps.get_model('employees', 'User')
-    email = 'infoPtototaal@gmail.com'
+    email = 'Infoprototaal@gmail.com'
     
     # Check if the user already exists to avoid duplicates
     if not User.objects.filter(email=email).exists():
@@ -21,7 +21,7 @@ def create_default_admin(apps, schema_editor):
 
 def remove_default_admin(apps, schema_editor):
     User = apps.get_model('employees', 'User')
-    email = 'infoPtototaal@gmail.com'
+    email = 'Infoprototaal@gmail.com'
     User.objects.filter(email=email).delete()
 
 class Migration(migrations.Migration):
